@@ -375,10 +375,10 @@ document.getElementById('saveRate').onclick = ()=>{
   const now = new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
   const rec = { r304: state.rate304||0, r316: state.rate316||0, date: now };
   setLastRate(item.size, rec);
-  if(window.__role==='admin' && window.SYNC && window.SYNC.ready)
-    window.SYNC.setSaved(rateKey(state.cat,state.type,item.size), rec);  // sync to all devices
+  const synced = window.SYNC && window.SYNC.ready;
+  if(synced) window.SYNC.setSaved(rateKey(state.cat,state.type,item.size), rec);  // sync to all devices
   renderAll();
-  note.textContent = '✓ Saved last rate for '+item.size+' (synced to all devices).';
+  note.textContent = '✓ Saved last rate for '+item.size + (synced ? ' (synced to all devices).' : ' (saved on this device).');
   setTimeout(()=>{ if(note.textContent.startsWith('✓')) renderItem(); }, 2500);
 };
 document.getElementById('search').oninput = renderTable;
@@ -486,7 +486,6 @@ document.getElementById('resetData').onclick = ()=>{
 function applyRole(role){
   const admin = role==='admin';
   document.getElementById('adminTools').style.display = admin ? 'flex' : 'none';
-  document.getElementById('saveRate').style.display = admin ? '' : 'none';   // only admin writes shared rates
   document.getElementById('roleBadge').textContent = admin ? 'Signed in · Admin' : 'Signed in · Viewer';
 }
 // ---- session with 5-minute idle timeout (survives page refresh) ----
