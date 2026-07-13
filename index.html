@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arihant ATF — Price Calculator</title>
+<style>
+  :root{
+    --bg:#0f1720; --panel:#17222e; --panel2:#1e2c3a; --line:#2b3b4c;
+    --text:#e8eef4; --muted:#93a4b5; --accent:#3d9bff; --accent2:#25c26e;
+    --warn:#f0a63a; --chip:#243546;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Segoe UI",system-ui,Arial,sans-serif;background:var(--bg);color:var(--text);}
+  header{background:linear-gradient(90deg,#12202e,#16304a);border-bottom:1px solid var(--line);
+    padding:14px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+  header h1{font-size:18px;margin:0;letter-spacing:.5px}
+  header .sub{color:var(--muted);font-size:12px}
+  .wrap{max-width:1080px;margin:0 auto;padding:18px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
+  .row{display:flex;gap:14px;flex-wrap:wrap}
+  .fld{flex:1;min-width:150px}
+  label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:.4px}
+  input,select{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--text);
+    padding:10px 11px;border-radius:8px;font-size:15px;outline:none}
+  input:focus,select:focus{border-color:var(--accent)}
+  .rateinput{font-size:18px;font-weight:600}
+  .seg{display:flex;background:var(--panel2);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .seg button{flex:1;background:transparent;border:0;color:var(--muted);padding:10px;font-size:14px;cursor:pointer}
+  .seg button.active{background:var(--accent);color:#fff;font-weight:600}
+  .result{display:flex;align-items:baseline;gap:12px;margin:6px 0 2px}
+  .result .price{font-size:42px;font-weight:700;color:var(--accent2)}
+  .result .grade{font-size:13px;color:var(--muted)}
+  .brk{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .chip{background:var(--chip);border:1px solid var(--line);border-radius:20px;padding:5px 12px;font-size:12px}
+  .chip b{color:var(--text)}
+  .muted{color:var(--muted)}
+  .note{color:var(--warn);font-size:12px;margin-top:8px}
+  .remarkbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:14px;
+    padding-top:12px;border-top:1px dashed var(--line)}
+  .remark{font-size:13px;color:#cfe6ff;flex:1;min-width:180px}
+  .remark.empty{color:var(--muted)}
+  .btn.save{background:var(--accent2);border-color:var(--accent2);color:#06301b;font-weight:600}
+  td.rem{font-size:12px}
+  tr.warn td{background:#3a2c12}
+  .wflag{color:var(--warn);cursor:help}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--panel);cursor:default}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  tr:hover td{background:var(--panel2)}
+  .tblwrap{max-height:460px;overflow:auto;border:1px solid var(--line);border-radius:10px}
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+  .btn{background:var(--panel2);border:1px solid var(--line);color:var(--text);padding:9px 14px;
+    border-radius:8px;font-size:13px;cursor:pointer}
+  .btn:hover{border-color:var(--accent)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .fn304,.price304{color:#f0d43a}   /* all 304 columns → yellow */
+  .fn316,.price316{color:#f58fd0}   /* all 316 columns → pink */
+  .pbold{font-weight:700}           /* bold the Price columns */
+  .err{background:#3a1d1d;border:1px solid #6b2c2c;color:#f2b5b5;padding:10px 14px;border-radius:8px;margin-bottom:14px}
+  .hint{font-size:11px;color:var(--muted);margin-top:4px}
+  @media(max-width:640px){.result .price{font-size:34px}}
+  /* password gate */
+  #gate{position:fixed;inset:0;background:var(--bg);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px}
+  #gate .card{max-width:380px;width:100%;text-align:center}
+  #gate h2{margin:0 0 4px}
+  #gate input[type=password]{margin:14px 0 10px;text-align:center;font-size:16px}
+  #gate .chk{display:flex;align-items:center;gap:8px;justify-content:center;font-size:13px;color:var(--muted);margin-bottom:14px}
+  #gate .chk input{width:auto}
+  #gate .btn{width:100%}
+  /* toast */
+  #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--accent2);color:#06301b;
+    font-weight:600;padding:10px 18px;border-radius:24px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:1200}
+  #toast.show{opacity:1}
+  .uploads{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .uploads .btn{cursor:pointer}
+</style>
+</head>
+<body>
+
+<!-- PASSWORD GATE -->
+<div id="gate">
+  <div class="card">
+    <h2>🔒 Arihant ATF</h2>
+    <div class="muted" style="font-size:13px">Purchase Price Calculator</div>
+    <input id="pw" type="password" placeholder="Enter password" autocomplete="current-password">
+    <label class="chk"><input type="checkbox" id="rememberPw"> Remember on this device</label>
+    <button class="btn primary" id="unlock">Unlock</button>
+    <div id="gateErr" class="note" style="text-align:center"></div>
+  </div>
+</div>
+
+<header>
+  <div>
+    <h1>ARIHANT ATF · Purchase Price Calculator</h1>
+    <div class="sub">Enter today's SS rate below · Upload Excel to update the price sheet</div>
+  </div>
+  <div class="uploads">
+    <label class="btn" title="Upload an updated CONN.xlsx">⬆ CONN.xlsx<input type="file" id="upConn" accept=".xlsx" hidden></label>
+    <label class="btn" title="Upload an updated elbow.xlsx">⬆ elbow.xlsx<input type="file" id="upElbow" accept=".xlsx" hidden></label>
+    <button class="btn" id="resetData" title="Discard uploads on this device and use the published price sheet">Reset</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <div id="errbox"></div>
+
+  <!-- RATES -->
+  <div class="card">
+    <div class="row">
+      <div class="fld">
+        <label>SS 304 rate (₹ / kg)</label>
+        <input class="rateinput" id="rate304" type="number" min="0" step="1" placeholder="e.g. 250">
+        <div class="hint">Today's raw material rate for 304 grade bar</div>
+      </div>
+      <div class="fld">
+        <label>SS 316 rate (₹ / kg)</label>
+        <input class="rateinput" id="rate316" type="number" min="0" step="1" placeholder="e.g. 550">
+        <div class="hint">Today's raw material rate for 316 grade bar</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SINGLE ITEM CALCULATOR -->
+  <div class="card">
+    <div class="row" style="margin-bottom:14px">
+      <div class="fld">
+        <label>Product</label>
+        <div class="seg" id="segCat">
+          <button data-v="connector" class="active">Connector</button>
+          <button data-v="elbow">Elbow</button>
+        </div>
+      </div>
+      <div class="fld">
+        <label>Type</label>
+        <div class="seg" id="segType">
+          <button data-v="Male" class="active">Male</button>
+          <button data-v="Female">Female</button>
+          <button data-v="Union">Union</button>
+        </div>
+      </div>
+      <div class="fld">
+        <label>Grade</label>
+        <div class="seg" id="segGrade">
+          <button data-v="304" class="active">304</button>
+          <button data-v="316">316</button>
+        </div>
+      </div>
+    </div>
+    <div class="row" style="margin-bottom:14px">
+      <div class="fld" style="flex:2">
+        <label>Size</label>
+        <select id="sizeSel"></select>
+      </div>
+      <div class="fld">
+        <label>Quantity</label>
+        <input id="qty" type="number" min="1" step="1" value="1">
+      </div>
+    </div>
+
+    <div class="result">
+      <div class="price" id="unitPrice">₹0.00</div>
+      <div class="grade" id="unitGrade">per piece</div>
+    </div>
+    <div class="brk" id="breakdown"></div>
+    <div class="remarkbar">
+      <div class="remark empty" id="itemRemark">No rate saved for this size yet.</div>
+      <button class="btn save" id="saveRate">💾 Save current rate for this size</button>
+    </div>
+    <div class="result" style="margin-top:14px">
+      <div class="grade">Total (× qty):</div>
+      <div class="price" style="font-size:26px;color:#fff" id="totalPrice">₹0.00</div>
+    </div>
+    <div class="note" id="itemNote"></div>
+  </div>
+
+  <!-- FULL PRICE LIST -->
+  <div class="card">
+    <div class="toolbar">
+      <strong style="font-size:15px">Full price list</strong>
+      <input id="search" placeholder="Search size…" style="max-width:220px">
+      <span class="muted" id="listMeta" style="font-size:20px"></span>
+    </div>
+    <div class="tblwrap">
+      <table id="listTbl">
+        <thead>
+          <tr>
+            <th>Size</th>
+            <th class="num fn304">Body 304</th>
+            <th class="num fn316">Body 316</th>
+            <th class="num fn304">F + N (304)</th>
+            <th class="num fn316">F + N (316)</th>
+            <th class="num fn304 pbold">Price 304</th>
+            <th class="num fn316 pbold">Price 316</th>
+            <th>Remark (last rate)</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="hint" id="listFormula"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="xlsx.full.min.js"></script>
+<script>
+const state = {
+  data:null, cat:'connector', type:'Male', grade:'304',
+  rate304: Number(localStorage.getItem('rate304')||0),
+  rate316: Number(localStorage.getItem('rate316')||0),
+};
+
+const rupee = n => '₹' + (Math.round(n*100)/100).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+// ---- per-size last rate remark (stored in browser) ----
+const RATE_KEY = 'atf_lastRates';
+function loadRates(){ try{ return JSON.parse(localStorage.getItem(RATE_KEY)||'{}'); }catch(e){ return {}; } }
+function saveRatesStore(o){ localStorage.setItem(RATE_KEY, JSON.stringify(o)); }
+function rateKey(cat,type,size){ return cat+'|'+type+'|'+size; }
+function getLastRate(size){ return loadRates()[rateKey(state.cat,state.type,size)]||null; }
+function setLastRate(size,rec){ const o=loadRates(); o[rateKey(state.cat,state.type,size)]=rec; saveRatesStore(o); }
+function remarkText(rec){
+  if(!rec || (!rec.r304 && !rec.r316)) return '';
+  const p=[]; if(rec.r304) p.push('304 ₹'+rec.r304); if(rec.r316) p.push('316 ₹'+rec.r316);
+  return 'Last rate: '+p.join('  ·  ')+(rec.date? '  ·  saved '+rec.date : '');
+}
+function remarkShort(rec){
+  if(!rec || (!rec.r304 && !rec.r316)) return '<span class="muted">—</span>';
+  const p=[]; if(rec.r304) p.push('304 ₹'+rec.r304); if(rec.r316) p.push('316 ₹'+rec.r316);
+  return p.join(' · ')+(rec.date? ' <span class="muted">('+rec.date+')</span>' : '');
+}
+
+// ---- price math ----
+function connectorPrice(item, grade){
+  const rate = grade==='304'? state.rate304 : state.rate316;
+  const nut  = grade==='304'? item.nut304   : item.nut316;
+  const w = item.weight||0, L = item.length||0;
+  const metal = (w/1000)*L*rate;            // (kg/m ÷ 1000) × mm × ₹/kg
+  const labour = item.labour||0;
+  const material = metal + labour;          // material now includes labour
+  const addons = (item.ferrule||0)+(nut||0);
+  const incomplete = (item.weight==null || item.length==null);   // no metal cost possible
+  return {metal, material, addons, labour, ferrule:item.ferrule||0, nut:nut||0, total: material+addons, incomplete};
+}
+function elbowPrice(item, grade){
+  const rate = grade==='304'? state.rate304 : state.rate316;
+  const metal = (item.weight||0)*rate;      // finished kg × ₹/kg
+  const labour = item.labour||0;
+  const material = metal + labour;          // material now includes labour
+  const addons = (item.machining||0);
+  const incomplete = (item.weight==null);
+  return {metal, material, addons, labour, machining:item.machining||0, nut:0, total: material+addons, incomplete};
+}
+function priceOf(item, grade){
+  return state.cat==='connector'? connectorPrice(item,grade) : elbowPrice(item,grade);
+}
+
+// ---- rendering ----
+function currentRows(){
+  const cat = state.data?.[state.cat] || {};
+  return cat[state.type] || [];
+}
+function fillSizes(){
+  const sel = document.getElementById('sizeSel');
+  const rows = currentRows();
+  sel.innerHTML = rows.map((r,i)=>`<option value="${i}">${r.size}</option>`).join('') || '<option>— no data —</option>';
+  renderItem();
+}
+function renderItem(){
+  const rows = currentRows();
+  const idx = Number(document.getElementById('sizeSel').value)||0;
+  const item = rows[idx];
+  const bd = document.getElementById('breakdown');
+  const note = document.getElementById('itemNote');
+  if(!item){ document.getElementById('unitPrice').textContent='₹0.00'; bd.innerHTML=''; note.textContent=''; return; }
+  const p = priceOf(item, state.grade);
+  const qty = Math.max(1, Number(document.getElementById('qty').value)||1);
+  document.getElementById('unitPrice').textContent = rupee(p.total);
+  document.getElementById('unitGrade').textContent = `per piece · SS ${state.grade}`;
+  document.getElementById('totalPrice').textContent = rupee(p.total*qty);
+
+  let chips = [`<span class="chip">Body <b>${rupee(p.material)}</b> <span class="muted">(metal ${rupee(p.metal)} + labour ${rupee(p.labour)})</span></span>`];
+  if(state.cat==='connector'){
+    chips.push(`<span class="chip">Ferrule <b>${rupee(p.ferrule)}</b></span>`);
+    chips.push(`<span class="chip">Nut ${state.grade} <b>${rupee(p.nut)}</b></span>`);
+  } else {
+    chips.push(`<span class="chip">Machining <b>${rupee(p.machining)}</b></span>`);
+  }
+  bd.innerHTML = chips.join('');
+
+  // last-rate remark for this size
+  const rec = getLastRate(item.size);
+  const rEl = document.getElementById('itemRemark');
+  const txt = remarkText(rec);
+  rEl.textContent = txt || 'No rate saved for this size yet.';
+  rEl.classList.toggle('empty', !txt);
+
+  const rate = state.grade==='304'? state.rate304 : state.rate316;
+  const warns = [];
+  if(p.incomplete)
+    warns.push(`⚠ Weight is not filled for this size in ${state.cat==='connector'?'CONN.xlsx':'elbow.xlsx'} — metal cost is ₹0, so this price is INCOMPLETE.`);
+  if(!rate) warns.push(`Enter the SS ${state.grade} rate above to include material cost.`);
+  if(state.cat==='elbow' && p.labour===0 && p.machining===0)
+    warns.push('Elbow labour & machining charges are blank in elbow.xlsx — fill them there for a complete price.');
+  note.innerHTML = warns.join(' ');
+}
+
+function renderTable(){
+  const rows = currentRows();
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  const tb = document.querySelector('#listTbl tbody');
+  const filtered = rows.filter(r=>r.size.toLowerCase().includes(q));
+  let incomplete = 0;
+  tb.innerHTML = filtered.map(r=>{
+    const a = priceOf(r,'304'), b = priceOf(r,'316');
+    const warn = a.incomplete; if(warn) incomplete++;
+    const flag = warn ? ' <span class="wflag" title="Weight missing in Excel — metal cost not included">⚠</span>' : '';
+    return `<tr${warn?' class="warn"':''}>
+      <td>${r.size}${flag}</td>
+      <td class="num fn304">${rupee(a.material)}</td>
+      <td class="num fn316">${rupee(b.material)}</td>
+      <td class="num fn304">${rupee(a.addons)}</td>
+      <td class="num fn316">${rupee(b.addons)}</td>
+      <td class="num price304 pbold">${rupee(a.total)}</td>
+      <td class="num price316 pbold">${rupee(b.total)}</td>
+      <td class="rem">${remarkShort(getLastRate(r.size))}</td>
+    </tr>`;
+  }).join('');
+  const meta = document.getElementById('listMeta');
+  meta.textContent = `${filtered.length} of ${rows.length} sizes · ${state.cat} · ${state.type}`
+    + (incomplete ? `  ·  ⚠ ${incomplete} missing weight` : '');
+  meta.style.color = incomplete ? 'var(--warn)' : '';
+  document.getElementById('listFormula').innerHTML = state.cat==='connector'
+    ? 'Body = (Weight kg/m ÷ 1000) × Length mm × Rate ₹/kg + Labour.   Price = Body + Ferrule + Nut'
+    : 'Body = Weight kg × Rate ₹/kg + Labour.   Price = Body + Machining';
+}
+
+function renderAll(){ renderItem(); renderTable(); }
+
+// ---- wiring ----
+function segGroup(id, onPick){
+  document.querySelectorAll(`#${id} button`).forEach(b=>{
+    b.onclick=()=>{
+      document.querySelectorAll(`#${id} button`).forEach(x=>x.classList.remove('active'));
+      b.classList.add('active'); onPick(b.dataset.v);
+    };
+  });
+}
+segGroup('segCat', v=>{ state.cat=v; fillSizes(); renderTable(); });
+segGroup('segType', v=>{ state.type=v; fillSizes(); renderTable(); });
+segGroup('segGrade', v=>{ state.grade=v; renderItem(); });
+
+document.getElementById('sizeSel').onchange = renderItem;
+document.getElementById('qty').oninput = renderItem;
+
+document.getElementById('saveRate').onclick = ()=>{
+  const rows = currentRows();
+  const item = rows[Number(document.getElementById('sizeSel').value)||0];
+  if(!item) return;
+  const note = document.getElementById('itemNote');
+  if(!state.rate304 && !state.rate316){
+    note.textContent = 'Enter an SS 304 or 316 rate above before saving.'; return;
+  }
+  const now = new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+  setLastRate(item.size, { r304: state.rate304||0, r316: state.rate316||0, date: now });
+  renderAll();
+  note.textContent = '✓ Saved last rate for '+item.size+'.';
+  setTimeout(()=>{ if(note.textContent.startsWith('✓')) renderItem(); }, 2500);
+};
+document.getElementById('search').oninput = renderTable;
+
+const r304 = document.getElementById('rate304'), r316 = document.getElementById('rate316');
+r304.value = state.rate304||''; r316.value = state.rate316||'';
+r304.oninput = ()=>{ state.rate304=Math.max(0,Number(r304.value)||0); localStorage.setItem('rate304',state.rate304); renderAll(); };
+r316.oninput = ()=>{ state.rate316=Math.max(0,Number(r316.value)||0); localStorage.setItem('rate316',state.rate316); renderAll(); };
+
+// ---- toast ----
+let toastTimer;
+function toast(msg){
+  const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+// ---- decrypt bundled data (WebCrypto: PBKDF2 + AES-256-GCM) ----
+function b64ToBytes(b64){ return Uint8Array.from(atob(b64), c=>c.charCodeAt(0)); }
+async function deriveKey(password, salt, iter){
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    {name:'PBKDF2', salt, iterations:iter, hash:'SHA-256'},
+    base, {name:'AES-GCM', length:256}, false, ['decrypt']);
+}
+async function decryptData(password){
+  const meta = await (await fetch('data.enc?_='+Date.now(), {cache:'no-store'})).json();
+  const key = await deriveKey(password, b64ToBytes(meta.salt), meta.iter);
+  const plain = await crypto.subtle.decrypt({name:'AES-GCM', iv:b64ToBytes(meta.iv)}, key, b64ToBytes(meta.ct));
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+
+// ---- client-side Excel parsing (mirrors server.py) ----
+function num(v){
+  if(v===null||v===undefined||v==='') return null;
+  if(typeof v==='number') return v;
+  const n=parseFloat(String(v).trim()); return isNaN(n)?null:n;
+}
+function parseConnectors(wb){
+  const map={Male:'MALE CONN',Female:'FEMALE CONN',Union:'UNION'}; const out={};
+  for(const label in map){
+    const ws=wb.Sheets[map[label]]; if(!ws) continue;
+    const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+    const res=[];
+    for(let i=1;i<rows.length;i++){ const r=rows[i]; if(!r) continue;
+      const size=r[0]; if(size===null||String(size).trim()==='') continue;
+      const hexv=num(r[1]); let weight=num(r[2]);
+      if(weight===null && hexv!==null) weight=Math.round(hexv*hexv*0.0068*10000)/10000;
+      res.push({size:String(size).trim(),hex:hexv,weight,length:num(r[3]),
+        labour:num(r[6])||0,ferrule:num(r[7])||0,nut304:num(r[8])||0,nut316:num(r[9])||0});
+    }
+    out[label]=res;
+  }
+  return out;
+}
+function parseElbows(wb){
+  const map={Male:'MALE ELBOW',Female:'FEMALE ELBOW',Union:'UNION'}; const out={};
+  for(const label in map){
+    const ws=wb.Sheets[map[label]]; if(!ws) continue;
+    const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+    const res=[];
+    for(let i=2;i<rows.length;i++){ const r=rows[i]; if(!r) continue;
+      const size=r[0]; if(size===null||String(size).trim()==='') continue;
+      res.push({size:String(size).trim(),forging:num(r[1]),weight:num(r[2]),
+        labour:num(r[3])||0,machining:num(r[4])||0});
+    }
+    out[label]=res;
+  }
+  return out;
+}
+function persistData(){ try{ localStorage.setItem('atf_data', JSON.stringify(state.data)); }catch(e){} }
+async function handleUpload(file, kind){
+  try{
+    const wb = XLSX.read(await file.arrayBuffer(), {type:'array'});
+    if(kind==='conn') state.data.connector = parseConnectors(wb);
+    else state.data.elbow = parseElbows(wb);
+    persistData(); fillSizes(); renderTable();
+    toast('Updated from '+file.name);
+  }catch(e){ toast('Could not read '+file.name); }
+}
+document.getElementById('upConn').onchange = e=>{ if(e.target.files[0]) handleUpload(e.target.files[0],'conn'); e.target.value=''; };
+document.getElementById('upElbow').onchange = e=>{ if(e.target.files[0]) handleUpload(e.target.files[0],'elbow'); e.target.value=''; };
+document.getElementById('resetData').onclick = ()=>{
+  localStorage.removeItem('atf_data');
+  if(window.__published){ state.data = JSON.parse(JSON.stringify(window.__published)); fillSizes(); renderTable(); toast('Reset to published prices'); }
+};
+
+// ---- password gate ----
+async function unlock(pw){
+  const errEl=document.getElementById('gateErr'); errEl.textContent='Checking…';
+  try{
+    const published = await decryptData(pw);
+    window.__published = published;
+    const stored = localStorage.getItem('atf_data');
+    state.data = stored ? JSON.parse(stored) : JSON.parse(JSON.stringify(published));
+    if(document.getElementById('rememberPw').checked) localStorage.setItem('atf_pw', pw);
+    else localStorage.removeItem('atf_pw');
+    document.getElementById('gate').style.display='none';
+    fillSizes(); renderTable();
+  }catch(e){
+    errEl.textContent='Wrong password. Please try again.';
+    localStorage.removeItem('atf_pw');
+  }
+}
+document.getElementById('unlock').onclick = ()=>unlock(document.getElementById('pw').value);
+document.getElementById('pw').addEventListener('keydown', e=>{ if(e.key==='Enter') unlock(e.target.value); });
+(function autoUnlock(){
+  const saved = localStorage.getItem('atf_pw');
+  if(saved){ document.getElementById('pw').value=saved; document.getElementById('rememberPw').checked=true; unlock(saved); }
+  else document.getElementById('pw').focus();
+})();
+</script>
+</body>
+</html>
