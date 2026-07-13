@@ -97,9 +97,13 @@
     <div class="sub">Enter today's SS rate below · Upload Excel to update the price sheet</div>
   </div>
   <div class="uploads">
-    <label class="btn" title="Upload an updated CONN.xlsx">⬆ CONN.xlsx<input type="file" id="upConn" accept=".xlsx" hidden></label>
-    <label class="btn" title="Upload an updated elbow.xlsx">⬆ elbow.xlsx<input type="file" id="upElbow" accept=".xlsx" hidden></label>
-    <button class="btn" id="resetData" title="Discard uploads on this device and use the published price sheet">Reset</button>
+    <span id="roleBadge" class="muted" style="font-size:12px"></span>
+    <div id="adminTools" style="display:none;gap:8px;align-items:center;flex-wrap:wrap">
+      <label class="btn" title="Upload an updated CONN.xlsx">⬆ CONN.xlsx<input type="file" id="upConn" accept=".xlsx" hidden></label>
+      <label class="btn" title="Upload an updated elbow.xlsx">⬆ elbow.xlsx<input type="file" id="upElbow" accept=".xlsx" hidden></label>
+      <button class="btn" id="resetData" title="Discard uploads on this device and use the published price sheet">Reset</button>
+    </div>
+    <button class="btn" id="signout" title="Sign out">Sign out</button>
   </div>
 </header>
 
@@ -392,11 +396,20 @@ async function deriveKey(password, salt, iter){
     {name:'PBKDF2', salt, iterations:iter, hash:'SHA-256'},
     base, {name:'AES-GCM', length:256}, false, ['decrypt']);
 }
+async function decryptBlob(blob, password, iter){
+  const key = await deriveKey(password, b64ToBytes(blob.salt), iter);
+  const plain = await crypto.subtle.decrypt({name:'AES-GCM', iv:b64ToBytes(blob.iv)}, key, b64ToBytes(blob.ct));
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+// Returns {role, data}. v2 bundles have admin+user blobs; v1 is a single (admin) blob.
 async function decryptData(password){
   const meta = await (await fetch('data.enc?_='+Date.now(), {cache:'no-store'})).json();
-  const key = await deriveKey(password, b64ToBytes(meta.salt), meta.iter);
-  const plain = await crypto.subtle.decrypt({name:'AES-GCM', iv:b64ToBytes(meta.iv)}, key, b64ToBytes(meta.ct));
-  return JSON.parse(new TextDecoder().decode(plain));
+  const iter = meta.iter || 200000;
+  const roles = meta.admin ? [['admin',meta.admin],['user',meta.user]] : [['admin',meta]];
+  for(const [role,blob] of roles){
+    try{ const data = await decryptBlob(blob, password, iter); return {role, data}; }catch(e){}
+  }
+  throw new Error('bad password');
 }
 
 // ---- client-side Excel parsing (mirrors server.py) ----
@@ -455,15 +468,22 @@ document.getElementById('resetData').onclick = ()=>{
 };
 
 // ---- password gate ----
+function applyRole(role){
+  const admin = role==='admin';
+  document.getElementById('adminTools').style.display = admin ? 'flex' : 'none';
+  document.getElementById('roleBadge').textContent = admin ? 'Signed in · Admin' : 'Signed in · Viewer';
+}
 async function unlock(pw){
   const errEl=document.getElementById('gateErr'); errEl.textContent='Checking…';
   try{
-    const published = await decryptData(pw);
-    window.__published = published;
+    const {role, data} = await decryptData(pw);
+    window.__published = data; window.__role = role;
+    // Viewers always see the published sheet; only admins keep local uploads.
     const stored = localStorage.getItem('atf_data');
-    state.data = stored ? JSON.parse(stored) : JSON.parse(JSON.stringify(published));
+    state.data = (role==='admin' && stored) ? JSON.parse(stored) : JSON.parse(JSON.stringify(data));
     if(document.getElementById('rememberPw').checked) localStorage.setItem('atf_pw', pw);
     else localStorage.removeItem('atf_pw');
+    applyRole(role);
     document.getElementById('gate').style.display='none';
     fillSizes(); renderTable();
   }catch(e){
@@ -471,6 +491,7 @@ async function unlock(pw){
     localStorage.removeItem('atf_pw');
   }
 }
+document.getElementById('signout').onclick = ()=>{ localStorage.removeItem('atf_pw'); location.reload(); };
 document.getElementById('unlock').onclick = ()=>unlock(document.getElementById('pw').value);
 document.getElementById('pw').addEventListener('keydown', e=>{ if(e.key==='Enter') unlock(e.target.value); });
 (function autoUnlock(){
