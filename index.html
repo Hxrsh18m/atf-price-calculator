@@ -97,6 +97,7 @@
     <div class="sub">Enter today's SS rate below · Upload Excel to update the price sheet</div>
   </div>
   <div class="uploads">
+    <span id="syncBadge" title="Live sync status" style="font-size:12px;color:var(--muted)">● connecting…</span>
     <span id="roleBadge" class="muted" style="font-size:12px"></span>
     <div id="adminTools" style="display:none;gap:8px;align-items:center;flex-wrap:wrap">
       <label class="btn" title="Upload an updated CONN.xlsx">⬆ CONN.xlsx<input type="file" id="upConn" accept=".xlsx" hidden></label>
@@ -224,7 +225,10 @@ const RATE_KEY = 'atf_lastRates';
 function loadRates(){ try{ return JSON.parse(localStorage.getItem(RATE_KEY)||'{}'); }catch(e){ return {}; } }
 function saveRatesStore(o){ localStorage.setItem(RATE_KEY, JSON.stringify(o)); }
 function rateKey(cat,type,size){ return cat+'|'+type+'|'+size; }
-function getLastRate(size){ return loadRates()[rateKey(state.cat,state.type,size)]||null; }
+function getLastRate(size){
+  const key = rateKey(state.cat,state.type,size);
+  return (window.__sharedSaved||{})[key] || loadRates()[key] || null;  // shared (all devices) wins
+}
 function setLastRate(size,rec){ const o=loadRates(); o[rateKey(state.cat,state.type,size)]=rec; saveRatesStore(o); }
 function remarkText(rec){
   if(!rec || (!rec.r304 && !rec.r316)) return '';
@@ -369,17 +373,28 @@ document.getElementById('saveRate').onclick = ()=>{
     note.textContent = 'Enter an SS 304 or 316 rate above before saving.'; return;
   }
   const now = new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
-  setLastRate(item.size, { r304: state.rate304||0, r316: state.rate316||0, date: now });
+  const rec = { r304: state.rate304||0, r316: state.rate316||0, date: now };
+  setLastRate(item.size, rec);
+  if(window.__role==='admin' && window.SYNC && window.SYNC.ready)
+    window.SYNC.setSaved(rateKey(state.cat,state.type,item.size), rec);  // sync to all devices
   renderAll();
-  note.textContent = '✓ Saved last rate for '+item.size+'.';
+  note.textContent = '✓ Saved last rate for '+item.size+' (synced to all devices).';
   setTimeout(()=>{ if(note.textContent.startsWith('✓')) renderItem(); }, 2500);
 };
 document.getElementById('search').oninput = renderTable;
 
 const r304 = document.getElementById('rate304'), r316 = document.getElementById('rate316');
 r304.value = state.rate304||''; r316.value = state.rate316||'';
-r304.oninput = ()=>{ state.rate304=Math.max(0,Number(r304.value)||0); localStorage.setItem('rate304',state.rate304); renderAll(); };
-r316.oninput = ()=>{ state.rate316=Math.max(0,Number(r316.value)||0); localStorage.setItem('rate316',state.rate316); renderAll(); };
+r304.oninput = ()=>{ state.rate304=Math.max(0,Number(r304.value)||0); localStorage.setItem('rate304',state.rate304); renderAll(); pushRate(); };
+r316.oninput = ()=>{ state.rate316=Math.max(0,Number(r316.value)||0); localStorage.setItem('rate316',state.rate316); renderAll(); pushRate(); };
+
+// Only admin publishes the daily rate to all devices (debounced).
+let rateTimer;
+function pushRate(){
+  if(window.__role!=='admin' || !(window.SYNC && window.SYNC.ready)) return;
+  clearTimeout(rateTimer);
+  rateTimer = setTimeout(()=>window.SYNC.setRate(state.rate304, state.rate316), 500);
+}
 
 // ---- toast ----
 let toastTimer;
@@ -471,6 +486,7 @@ document.getElementById('resetData').onclick = ()=>{
 function applyRole(role){
   const admin = role==='admin';
   document.getElementById('adminTools').style.display = admin ? 'flex' : 'none';
+  document.getElementById('saveRate').style.display = admin ? '' : 'none';   // only admin writes shared rates
   document.getElementById('roleBadge').textContent = admin ? 'Signed in · Admin' : 'Signed in · Viewer';
 }
 // ---- session with 5-minute idle timeout (survives page refresh) ----
@@ -526,12 +542,86 @@ document.getElementById('uid').addEventListener('keydown', e=>{ if(e.key==='Ente
 document.getElementById('pw').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
 document.getElementById('signout').onclick = ()=> signOut('');
 
+// ---- shared state from Firebase (called by the module below) ----
+window.__sharedSaved = {};
+function setSyncBadge(text, color){
+  const b=document.getElementById('syncBadge'); if(!b) return;
+  b.textContent=text; b.style.color=color;
+}
+window.onSyncReady = ()=> setSyncBadge('● Live', 'var(--accent2)');
+window.onSyncError = ()=> setSyncBadge('● Offline (local only)', 'var(--warn)');
+window.applySharedState = function(d){
+  d = d || {};
+  // daily rate — shared for everyone
+  if(typeof d.rate304 === 'number' && d.rate304 !== state.rate304){
+    state.rate304 = d.rate304; localStorage.setItem('rate304', d.rate304);
+    const el=document.getElementById('rate304'); if(el) el.value = d.rate304 || '';
+  }
+  if(typeof d.rate316 === 'number' && d.rate316 !== state.rate316){
+    state.rate316 = d.rate316; localStorage.setItem('rate316', d.rate316);
+    const el=document.getElementById('rate316'); if(el) el.value = d.rate316 || '';
+  }
+  // saved-rate remarks — stored under encoded keys with original key in `k`
+  const sh={}, raw=d.saved||{};
+  for(const ek in raw){ const v=raw[ek]; if(v && v.k) sh[v.k]={r304:v.r304, r316:v.r316, date:v.date}; }
+  window.__sharedSaved = sh;
+  setSyncBadge('● Live', 'var(--accent2)');
+  if(state.data) renderAll();
+};
+
 // restore an active session on load (refresh no longer logs you out)
 (function boot(){
   const s = readSession();
   if(s && Date.now() < s.exp && s.data){ enterApp(s.role, s.id, s.data); touchSession(); }
   else { endSession(); document.getElementById('uid').focus(); }
 })();
+
+// If Firebase never connects (blocked/offline), stop showing "connecting…"
+setTimeout(()=>{ const b=document.getElementById('syncBadge');
+  if(b && b.textContent.indexOf('connecting')>=0) setSyncBadge('● Offline (local only)','var(--warn)'); }, 8000);
+</script>
+
+<!-- Firebase live sync (daily rate + saved rates across all devices) -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDeBFG_Y5qN2jQFG5ImRrBEXbf4SKJYvOM",
+  authDomain: "atf-price-calculator.firebaseapp.com",
+  projectId: "atf-price-calculator",
+  storageBucket: "atf-price-calculator.firebasestorage.app",
+  messagingSenderId: "1087371062325",
+  appId: "1:1087371062325:web:8a12595300da4bb3e7157c"
+};
+function encKey(s){ return btoa(unescape(encodeURIComponent(s))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+try{
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  const ref = doc(db, "shared", "state");
+  window.SYNC = {
+    ready:false,
+    async setRate(r304, r316){
+      try{ await setDoc(ref, {rate304:r304, rate316:r316, updatedAt:Date.now()}, {merge:true}); }
+      catch(e){ console.warn('setRate', e); }
+    },
+    async setSaved(rawKey, rec){
+      try{ await setDoc(ref, {saved:{[encKey(rawKey)]:{k:rawKey, r304:rec.r304, r316:rec.r316, date:rec.date}}}, {merge:true}); }
+      catch(e){ console.warn('setSaved', e); }
+    }
+  };
+  await signInAnonymously(auth);
+  window.SYNC.ready = true;
+  if(window.onSyncReady) window.onSyncReady();
+  onSnapshot(ref, snap=>{
+    if(window.applySharedState) window.applySharedState(snap.exists() ? snap.data() : {});
+  }, err=>{ console.warn('snapshot', err); if(window.onSyncError) window.onSyncError(err); });
+}catch(e){
+  console.warn('Firebase init failed', e);
+  if(window.onSyncError) window.onSyncError(e);
+}
 </script>
 </body>
 </html>
