@@ -65,9 +65,8 @@
   #gate{position:fixed;inset:0;background:var(--bg);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px}
   #gate .card{max-width:380px;width:100%;text-align:center}
   #gate h2{margin:0 0 4px}
-  #gate input[type=password]{margin:14px 0 10px;text-align:center;font-size:16px}
-  #gate .chk{display:flex;align-items:center;gap:8px;justify-content:center;font-size:13px;color:var(--muted);margin-bottom:14px}
-  #gate .chk input{width:auto}
+  #gate input[type=text]{margin:14px 0 8px;text-align:center;font-size:16px}
+  #gate input[type=password]{margin:0 0 12px;text-align:center;font-size:16px}
   #gate .btn{width:100%}
   /* toast */
   #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--accent2);color:#06301b;
@@ -79,15 +78,16 @@
 </head>
 <body>
 
-<!-- PASSWORD GATE -->
+<!-- LOGIN GATE -->
 <div id="gate">
   <div class="card">
     <h2>🔒 Arihant ATF</h2>
     <div class="muted" style="font-size:13px">Purchase Price Calculator</div>
-    <input id="pw" type="password" placeholder="Enter password" autocomplete="current-password">
-    <label class="chk"><input type="checkbox" id="rememberPw"> Remember on this device</label>
-    <button class="btn primary" id="unlock">Unlock</button>
+    <input id="uid" type="text" placeholder="User ID" autocomplete="username" autocapitalize="none" spellcheck="false">
+    <input id="pw" type="password" placeholder="Password" autocomplete="current-password">
+    <button class="btn primary" id="unlock">Sign in</button>
     <div id="gateErr" class="note" style="text-align:center"></div>
+    <div class="muted" style="font-size:11px;margin-top:12px">Session ends after 5 minutes of inactivity.</div>
   </div>
 </div>
 
@@ -401,15 +401,15 @@ async function decryptBlob(blob, password, iter){
   const plain = await crypto.subtle.decrypt({name:'AES-GCM', iv:b64ToBytes(blob.iv)}, key, b64ToBytes(blob.ct));
   return JSON.parse(new TextDecoder().decode(plain));
 }
-// Returns {role, data}. v2 bundles have admin+user blobs; v1 is a single (admin) blob.
-async function decryptData(password){
+// Look up the account by User ID, then decrypt with the password. Returns {role,id,data}.
+async function login(uid, password){
   const meta = await (await fetch('data.enc?_='+Date.now(), {cache:'no-store'})).json();
   const iter = meta.iter || 200000;
-  const roles = meta.admin ? [['admin',meta.admin],['user',meta.user]] : [['admin',meta]];
-  for(const [role,blob] of roles){
-    try{ const data = await decryptBlob(blob, password, iter); return {role, data}; }catch(e){}
-  }
-  throw new Error('bad password');
+  const accounts = meta.accounts || [];
+  const acc = accounts.find(a => String(a.id).toLowerCase() === uid.trim().toLowerCase());
+  if(!acc) throw new Error('no such user');
+  const data = await decryptBlob(acc, password, iter);  // throws on wrong password
+  return { role: acc.role, id: acc.id, data };
 }
 
 // ---- client-side Excel parsing (mirrors server.py) ----
@@ -473,31 +473,64 @@ function applyRole(role){
   document.getElementById('adminTools').style.display = admin ? 'flex' : 'none';
   document.getElementById('roleBadge').textContent = admin ? 'Signed in · Admin' : 'Signed in · Viewer';
 }
-async function unlock(pw){
-  const errEl=document.getElementById('gateErr'); errEl.textContent='Checking…';
+// ---- session with 5-minute idle timeout (survives page refresh) ----
+const SESSION_KEY = 'atf_session';
+const IDLE_MS = 5 * 60 * 1000;
+let idleTimer = null, lastTouch = 0;
+function readSession(){ try{ return JSON.parse(localStorage.getItem(SESSION_KEY)); }catch(e){ return null; } }
+function writeSession(s){ localStorage.setItem(SESSION_KEY, JSON.stringify(s)); }
+function touchSession(){ const s = readSession(); if(s){ s.exp = Date.now()+IDLE_MS; writeSession(s); } }
+function endSession(){ localStorage.removeItem(SESSION_KEY); }
+function onActivity(){ const now = Date.now(); if(now - lastTouch > 5000){ lastTouch = now; touchSession(); } }
+function armIdle(){
+  ['mousemove','mousedown','keydown','touchstart','scroll'].forEach(ev =>
+    window.addEventListener(ev, onActivity, {passive:true}));
+  clearInterval(idleTimer);
+  idleTimer = setInterval(()=>{
+    const s = readSession();
+    if(!s || Date.now() > s.exp) signOut('Signed out after 5 minutes of inactivity.');
+  }, 15000);
+}
+function enterApp(role, id, data){
+  window.__role = role; window.__published = data;
+  const stored = localStorage.getItem('atf_data');
+  state.data = (role==='admin' && stored) ? JSON.parse(stored) : JSON.parse(JSON.stringify(data));
+  applyRole(role);
+  document.getElementById('gate').style.display='none';
+  fillSizes(); renderTable();
+  armIdle();
+}
+function signOut(msg){
+  clearInterval(idleTimer); endSession();
+  document.getElementById('gate').style.display='flex';
+  document.getElementById('pw').value='';
+  document.getElementById('gateErr').textContent = msg || '';
+  document.getElementById('uid').focus();
+}
+async function doLogin(){
+  const uid = document.getElementById('uid').value;
+  const pw  = document.getElementById('pw').value;
+  const errEl = document.getElementById('gateErr');
+  if(!uid.trim()){ errEl.textContent='Enter your User ID.'; return; }
+  errEl.textContent='Checking…';
   try{
-    const {role, data} = await decryptData(pw);
-    window.__published = data; window.__role = role;
-    // Viewers always see the published sheet; only admins keep local uploads.
-    const stored = localStorage.getItem('atf_data');
-    state.data = (role==='admin' && stored) ? JSON.parse(stored) : JSON.parse(JSON.stringify(data));
-    if(document.getElementById('rememberPw').checked) localStorage.setItem('atf_pw', pw);
-    else localStorage.removeItem('atf_pw');
-    applyRole(role);
-    document.getElementById('gate').style.display='none';
-    fillSizes(); renderTable();
+    const {role, id, data} = await login(uid, pw);
+    writeSession({ role, id, exp: Date.now()+IDLE_MS, data });
+    enterApp(role, id, data);
   }catch(e){
-    errEl.textContent='Wrong password. Please try again.';
-    localStorage.removeItem('atf_pw');
+    errEl.textContent = 'Wrong User ID or password.';
   }
 }
-document.getElementById('signout').onclick = ()=>{ localStorage.removeItem('atf_pw'); location.reload(); };
-document.getElementById('unlock').onclick = ()=>unlock(document.getElementById('pw').value);
-document.getElementById('pw').addEventListener('keydown', e=>{ if(e.key==='Enter') unlock(e.target.value); });
-(function autoUnlock(){
-  const saved = localStorage.getItem('atf_pw');
-  if(saved){ document.getElementById('pw').value=saved; document.getElementById('rememberPw').checked=true; unlock(saved); }
-  else document.getElementById('pw').focus();
+document.getElementById('unlock').onclick = doLogin;
+document.getElementById('uid').addEventListener('keydown', e=>{ if(e.key==='Enter') document.getElementById('pw').focus(); });
+document.getElementById('pw').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
+document.getElementById('signout').onclick = ()=> signOut('');
+
+// restore an active session on load (refresh no longer logs you out)
+(function boot(){
+  const s = readSession();
+  if(s && Date.now() < s.exp && s.data){ enterApp(s.role, s.id, s.data); touchSession(); }
+  else { endSession(); document.getElementById('uid').focus(); }
 })();
 </script>
 </body>
