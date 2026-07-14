@@ -173,7 +173,59 @@
       <div class="grade">Total (× qty):</div>
       <div class="price" style="font-size:26px;color:#fff" id="totalPrice">₹0.00</div>
     </div>
+    <div style="margin-top:14px">
+      <button class="btn primary" id="addToPo">➕ Add to Purchase Order</button>
+    </div>
     <div class="note" id="itemNote"></div>
+  </div>
+
+  <!-- PURCHASE ORDER -->
+  <div class="card" id="poCard">
+    <div class="toolbar" style="justify-content:space-between">
+      <strong style="font-size:15px">🧾 Purchase Order</strong>
+      <span class="muted" id="poCount" style="font-size:12px"></span>
+    </div>
+    <div class="row" style="margin-bottom:12px;align-items:flex-end">
+      <div class="fld" style="flex:2">
+        <label>Client (from CRM)</label>
+        <select id="clientSel"></select>
+      </div>
+      <div class="fld" style="flex:0 0 auto">
+        <button class="btn" id="newClient">＋ New client</button>
+      </div>
+    </div>
+    <div id="clientForm" style="display:none;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px">
+      <div class="row">
+        <div class="fld"><label>Name *</label><input id="cfName"></div>
+        <div class="fld"><label>GSTIN</label><input id="cfGstin"></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <div class="fld"><label>City</label><input id="cfCity"></div>
+        <div class="fld"><label>Phone</label><input id="cfPhone"></div>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:8px">
+        <button class="btn save" id="cfSave">Save client</button>
+        <button class="btn" id="cfCancel">Cancel</button>
+      </div>
+    </div>
+    <div class="tblwrap" style="max-height:none">
+      <table id="poTbl">
+        <thead><tr>
+          <th>#</th><th>Description</th><th class="num">Qty</th>
+          <th class="num">Unit ₹</th><th class="num">Amount ₹</th><th></th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="result" style="margin-top:12px;justify-content:flex-end;gap:16px">
+      <div class="grade">Grand total:</div>
+      <div class="price" style="font-size:24px;color:#fff" id="poTotal">₹0.00</div>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn primary" id="genPo">📄 Generate PO (PDF)</button>
+      <button class="btn" id="clearPo">Clear PO</button>
+    </div>
+    <div class="hint" id="poHint">Client list &amp; PDF are temporary — once your CRM is connected, clients load from it and the PO PDF is issued by the CRM.</div>
   </div>
 
   <!-- FULL PRICE LIST -->
@@ -207,6 +259,8 @@
 <div id="toast"></div>
 
 <script src="xlsx.full.min.js"></script>
+<script src="jspdf.umd.min.js"></script>
+<script src="jspdf.autotable.min.js"></script>
 <script>
 const state = {
   data:null, cat:'connector', type:'Male', grade:'304',
@@ -391,6 +445,124 @@ function pushRate(){
   clearTimeout(rateTimer);
   rateTimer = setTimeout(()=>window.SYNC.setRate(state.rate304, state.rate316), 500);
 }
+
+// ---- Purchase Order (cart + client-side PDF; CRM wiring later) ----
+const PO_KEY='atf_po', CLIENTS_KEY='atf_clients';
+let po = (()=>{ try{ return JSON.parse(localStorage.getItem(PO_KEY))||[]; }catch(e){ return []; } })();
+function savePo(){ localStorage.setItem(PO_KEY, JSON.stringify(po)); }
+
+// TODO(CRM): replace loadClients() with GET /api/customers once the CRM API is ready.
+function loadClients(){
+  try{ const c=JSON.parse(localStorage.getItem(CLIENTS_KEY)); if(c && c.length) return c; }catch(e){}
+  return [
+    {id:'SAMPLE-1', name:'(Sample) Reliance Industries Ltd', gstin:'24AAAAA0000A1Z5', city:'Ahmedabad', phone:''},
+    {id:'SAMPLE-2', name:'(Sample) Larsen & Toubro Ltd', gstin:'27BBBBB1111B2Z6', city:'Mumbai', phone:''}
+  ];
+}
+function saveClients(list){ localStorage.setItem(CLIENTS_KEY, JSON.stringify(list)); }
+function fillClients(selectId){
+  const sel=document.getElementById('clientSel'); const cur=sel.value;
+  sel.innerHTML='<option value="">— select client —</option>' +
+    loadClients().map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  sel.value = selectId || cur || '';
+}
+function itemDesc(it){
+  return `${it.type} ${it.category==='connector'?'Connector':'Elbow'} ${it.grade} · ${it.size}`;
+}
+function renderPo(){
+  const tb=document.querySelector('#poTbl tbody'); let total=0;
+  tb.innerHTML = po.length ? po.map((it,i)=>{
+    const amt=it.unitPrice*it.qty; total+=amt;
+    return `<tr>
+      <td>${i+1}</td><td>${itemDesc(it)}</td>
+      <td class="num">${it.qty}</td>
+      <td class="num">${rupee(it.unitPrice)}</td>
+      <td class="num">${rupee(amt)}</td>
+      <td><button class="btn" data-i="${i}" style="padding:2px 9px">✕</button></td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="6" class="muted" style="text-align:center;padding:16px">No items yet — configure an item above and click “Add to Purchase Order”.</td></tr>`;
+  document.getElementById('poTotal').textContent = rupee(total);
+  document.getElementById('poCount').textContent = po.length ? `${po.length} line item${po.length>1?'s':''}` : '';
+  tb.querySelectorAll('button[data-i]').forEach(b=> b.onclick=()=>{ po.splice(Number(b.dataset.i),1); savePo(); renderPo(); });
+}
+document.getElementById('addToPo').onclick = ()=>{
+  const item = currentRows()[Number(document.getElementById('sizeSel').value)||0];
+  if(!item) return;
+  const qty = Math.max(1, Number(document.getElementById('qty').value)||1);
+  po.push({ category:state.cat, type:state.type, grade:state.grade, size:item.size, qty, unitPrice: priceOf(item, state.grade).total });
+  savePo(); renderPo();
+  const n=document.getElementById('itemNote');
+  n.textContent = `✓ Added ${qty} × ${item.size} to the Purchase Order.`;
+  setTimeout(()=>{ if(n.textContent.startsWith('✓ Added')) renderItem(); }, 2500);
+};
+document.getElementById('clearPo').onclick = ()=>{ if(po.length && confirm('Clear all items from this PO?')){ po=[]; savePo(); renderPo(); } };
+document.getElementById('newClient').onclick = ()=>{ document.getElementById('clientForm').style.display=''; document.getElementById('cfName').focus(); };
+document.getElementById('cfCancel').onclick = ()=>{ document.getElementById('clientForm').style.display='none'; };
+document.getElementById('cfSave').onclick = ()=>{
+  const name=document.getElementById('cfName').value.trim();
+  if(!name){ document.getElementById('cfName').focus(); return; }
+  const list=loadClients();
+  const c={ id:'C'+Date.now(), name,
+    gstin:document.getElementById('cfGstin').value.trim(),
+    city:document.getElementById('cfCity').value.trim(),
+    phone:document.getElementById('cfPhone').value.trim() };
+  list.push(c); saveClients(list); fillClients(c.id);
+  document.getElementById('clientForm').style.display='none';
+  ['cfName','cfGstin','cfCity','cfPhone'].forEach(x=>document.getElementById(x).value='');
+};
+
+function poNumber(){ const d=new Date(), p=n=>String(n).padStart(2,'0');
+  return `ATF/PO/${String(d.getFullYear()).slice(2)}${p(d.getMonth()+1)}${p(d.getDate())}/${p(d.getHours())}${p(d.getMinutes())}`; }
+function inr(n){ return 'Rs ' + (Math.round(n*100)/100).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+document.getElementById('genPo').onclick = ()=>{
+  const hint=document.getElementById('poHint');
+  if(!po.length){ hint.textContent='Add at least one item to the PO first.'; return; }
+  const sel=document.getElementById('clientSel');
+  if(!sel.value){ hint.textContent='Select a client first.'; return; }
+  const client = loadClients().find(c=>c.id===sel.value) || {name: sel.options[sel.selectedIndex].text};
+  // TODO(CRM): POST this PO to the CRM and use the PDF it returns, instead of generating locally.
+  generatePoPdf(client);
+};
+function generatePoPdf(client){
+  const hint=document.getElementById('poHint');
+  const jsPDF = window.jspdf && window.jspdf.jsPDF;
+  if(!jsPDF){ hint.textContent='PDF engine not loaded — check your connection and retry.'; return; }
+  const doc=new jsPDF({unit:'pt', format:'a4'}); const M=40, R=555; let y=50;
+  doc.setFont('helvetica','bold'); doc.setFontSize(20); doc.text('ARIHANT ATF', M, y);
+  doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(90);
+  doc.text('Arihant Tubes and Fittings', M, y+15); doc.setTextColor(0);
+  doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.text('PURCHASE ORDER', R, y, {align:'right'});
+  doc.setFont('helvetica','normal'); doc.setFontSize(10);
+  const no=poNumber();
+  doc.text('PO No: '+no, R, y+16, {align:'right'});
+  doc.text('Date: '+new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}), R, y+30, {align:'right'});
+  y+=52; doc.setDrawColor(200); doc.line(M,y,R,y); y+=20;
+  doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text('To:', M, y);
+  doc.setFont('helvetica','normal'); doc.text(String(client.name||''), M+26, y);
+  let cy=y+15;
+  if(client.gstin){ doc.text('GSTIN: '+client.gstin, M+26, cy); cy+=14; }
+  if(client.city){ doc.text(client.city, M+26, cy); cy+=14; }
+  if(client.phone){ doc.text('Ph: '+client.phone, M+26, cy); cy+=14; }
+  y=cy+6; doc.setFontSize(9); doc.setTextColor(90);
+  doc.text(`Rates used — SS 304: Rs ${state.rate304}/kg    SS 316: Rs ${state.rate316}/kg`, M, y); doc.setTextColor(0);
+  const total=po.reduce((s,it)=>s+it.unitPrice*it.qty,0);
+  doc.autoTable({
+    startY:y+8,
+    head:[['#','Description','Qty','Unit Price','Amount']],
+    body: po.map((it,i)=>[i+1, itemDesc(it), String(it.qty), inr(it.unitPrice), inr(it.unitPrice*it.qty)]),
+    styles:{fontSize:9, cellPadding:5}, headStyles:{fillColor:[22,48,74], textColor:255},
+    columnStyles:{0:{cellWidth:26, halign:'right'}, 2:{halign:'right'}, 3:{halign:'right'}, 4:{halign:'right'}},
+    margin:{left:M, right:M}
+  });
+  let fy=doc.lastAutoTable.finalY+18;
+  doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.text('Grand Total: '+inr(total), R, fy, {align:'right'});
+  fy+=26; doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(120);
+  doc.text('Prices exclusive of GST unless stated. Interim PO generated by the Arihant ATF Price Calculator; the official PO will be issued from the CRM.', M, fy, {maxWidth:R-M});
+  doc.save(no.replace(/\//g,'-')+'.pdf');
+  hint.textContent='✓ PO PDF generated ('+no+').';
+}
+fillClients(); renderPo();
 
 // ---- toast ----
 let toastTimer;
