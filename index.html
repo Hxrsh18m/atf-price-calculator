@@ -75,13 +75,17 @@
   .uploads{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
   .uploads .btn{cursor:pointer}
   /* new-item modal */
-  #niModal{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1100;display:none;align-items:center;justify-content:center;padding:20px}
-  #niModal.show{display:flex}
-  #niModal .card{max-width:460px;width:100%;margin:0;max-height:92vh;overflow:auto}
+  #niModal, #viewModal{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1100;display:none;align-items:center;justify-content:center;padding:20px}
+  #niModal.show, #viewModal.show{display:flex}
+  #niModal .card, #viewModal .card{max-width:460px;width:100%;margin:0;max-height:92vh;overflow:auto}
   #niModal fieldset{border:1px solid var(--line);border-radius:10px;padding:12px;margin:12px 0}
   #niModal legend{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.4px;padding:0 6px}
   #niModal .calc{font-size:12px;color:var(--accent2);margin-top:8px;min-height:16px}
   #niModal input{margin-bottom:2px}
+  #vmBody .dh{color:var(--muted);text-transform:uppercase;font-size:11px;letter-spacing:.4px;margin:14px 0 2px}
+  #vmBody .drow{display:flex;justify-content:space-between;gap:16px;padding:7px 2px;border-bottom:1px solid var(--line);font-size:14px}
+  #vmBody .drow b{font-variant-numeric:tabular-nums}
+  .viewbtn{padding:2px 8px;font-size:14px;line-height:1.2}
 </style>
 </head>
 <body>
@@ -268,6 +272,7 @@
             <th class="num fn304 pbold">Price 304</th>
             <th class="num fn316 pbold">Price 316</th>
             <th>Remark (last rate)</th>
+            <th>View</th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -305,6 +310,16 @@
       <button class="btn save" id="niSave">Save item</button>
       <button class="btn" id="niCancel">Cancel</button>
     </div>
+  </div>
+</div>
+
+<!-- VIEW ITEM MODAL -->
+<div id="viewModal">
+  <div class="card">
+    <h3 style="margin:0 0 4px" id="vmTitle">Item details</h3>
+    <div class="muted" style="font-size:12px;margin-bottom:6px" id="vmSub"></div>
+    <div id="vmBody"></div>
+    <div style="margin-top:16px"><button class="btn" id="vmClose">Close</button></div>
   </div>
 </div>
 
@@ -454,7 +469,7 @@ function renderTable(){
   const tb = document.querySelector('#listTbl tbody');
   const filtered = rows.filter(r=>r.size.toLowerCase().includes(q));
   let incomplete = 0;
-  tb.innerHTML = filtered.map(r=>{
+  tb.innerHTML = filtered.map((r,fi)=>{
     const a = priceOf(r,'304'), b = priceOf(r,'316');
     const warn = a.incomplete; if(warn) incomplete++;
     const flag = warn ? ' <span class="wflag" title="Weight missing in Excel — metal cost not included">⚠</span>' : '';
@@ -467,8 +482,10 @@ function renderTable(){
       <td class="num price304 pbold">${rupee(a.total)}</td>
       <td class="num price316 pbold">${rupee(b.total)}</td>
       <td class="rem">${remarkShort(getLastRate(r.size))}</td>
+      <td><button class="btn viewbtn" data-fi="${fi}" title="View hex & length details">👁</button></td>
     </tr>`;
   }).join('');
+  tb.querySelectorAll('.viewbtn').forEach(btn=> btn.onclick = ()=> openView(filtered[Number(btn.dataset.fi)]));
   const meta = document.getElementById('listMeta');
   meta.textContent = `${filtered.length} of ${rows.length} sizes · ${state.cat} · ${state.type}`
     + (incomplete ? `  ·  ⚠ ${incomplete} missing weight` : '');
@@ -479,6 +496,42 @@ function renderTable(){
 }
 
 function renderAll(){ renderItem(); renderTable(); }
+
+// ---- view item details (hex & length of body and nut) ----
+function vmFmt(v, unit){ return (v==null || v==='') ? '<span class="muted">—</span>' : (v + (unit||'')); }
+function vmRow(label, val){ return `<div class="drow"><span>${label}</span><b>${val}</b></div>`; }
+function openView(item){
+  if(!item) return;
+  const isConn = state.cat==='connector';
+  document.getElementById('vmTitle').textContent = item.size;
+  document.getElementById('vmSub').textContent = `${state.type} ${isConn?'Connector':'Elbow'}`;
+  let h = '';
+  if(isConn){
+    h += `<div class="dh">Body</div>`;
+    h += vmRow('Hex (across flats)', vmFmt(item.hex,' mm'));
+    h += vmRow('Length', vmFmt(item.length,' mm'));
+    h += vmRow('Weight', vmFmt(item.weight,' kg/m'));
+    h += `<div class="dh">Nut</div>`;
+    if(item.nutHex!=null || item.nutLength!=null){
+      h += vmRow('Hex (across flats)', vmFmt(item.nutHex,' mm'));
+      h += vmRow('Length', vmFmt(item.nutLength,' mm'));
+    } else {
+      h += vmRow('Cost · SS 304', item.nut304!=null? rupee(item.nut304) : vmFmt(null));
+      h += vmRow('Cost · SS 316', item.nut316!=null? rupee(item.nut316) : vmFmt(null));
+      h += `<div class="hint" style="margin-top:8px">Nut hex &amp; length aren't in the price sheet — only the nut cost is stored.</div>`;
+    }
+  } else {
+    h += `<div class="dh">Body</div>`;
+    h += vmRow('Forging', vmFmt(item.forging,' mm'));
+    h += vmRow('Weight', vmFmt(item.weight,' kg'));
+    h += vmRow('Machining', item.machining!=null? rupee(item.machining) : vmFmt(null));
+  }
+  document.getElementById('vmBody').innerHTML = h;
+  document.getElementById('viewModal').classList.add('show');
+}
+function closeView(){ document.getElementById('viewModal').classList.remove('show'); }
+document.getElementById('vmClose').onclick = closeView;
+document.getElementById('viewModal').addEventListener('mousedown', e=>{ if(e.target.id==='viewModal') closeView(); });
 
 // ---- wiring ----
 function segGroup(id, onPick){
