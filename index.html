@@ -384,10 +384,12 @@ const hexWeight = hex => Math.round(hex*hex*0.0068*10000)/10000;   // kg/m, form
 function fillSizes(){
   const sel = document.getElementById('sizeSel');
   const rows = currentRows();
-  let opts = rows.map((r,i)=>`<option value="${i}">${r.size}</option>`).join('') || '<option value="">— no data —</option>';
-  if(state.customItem) opts = `<option value="__custom__">★ ${state.customItem.size} (custom · not saved)</option>` + opts;
-  sel.innerHTML = opts + (state.cat==='connector' ? '<option value="__new__">➕ Add new item…</option>' : '');
-  if(state.customItem) sel.value='__custom__';   // keep the custom item selected
+  const realOpts = rows.map((r,i)=>`<option value="${i}">${r.size}</option>`).join('') || '<option value="">— no data —</option>';
+  const newOpt = state.cat==='connector' ? '<option value="__new__">➕ Add new item…</option>' : '';
+  const customOpt = state.customItem ? `<option value="__custom__">★ ${state.customItem.size} (custom · not saved)</option>` : '';
+  sel.innerHTML = newOpt + customOpt + realOpts;   // "Add new item" on top
+  // default selection: custom item if present, else the first real size (never the "Add new item" row)
+  sel.value = state.customItem ? '__custom__' : (rows.length ? '0' : '');
   renderItem();
 }
 function renderItem(){
