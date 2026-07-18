@@ -311,6 +311,7 @@ const state = {
   rate304: Number(localStorage.getItem('rate304')||0),
   rate316: Number(localStorage.getItem('rate316')||0),
   labour: Number(localStorage.getItem('labour')||0),
+  customItem: null,   // transient one-off item from "Add new item" — never saved to the list
 };
 
 const rupee = n => '₹' + (Math.round(n*100)/100).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -373,25 +374,26 @@ function currentRows(){
   const cat = state.data?.[state.cat] || {};
   return cat[state.type] || [];
 }
-function ensureRows(){                        // like currentRows but attached to state.data (for adding items)
-  if(!state.data[state.cat]) state.data[state.cat] = {};
-  if(!state.data[state.cat][state.type]) state.data[state.cat][state.type] = [];
-  return state.data[state.cat][state.type];
+// the item currently shown in the calculator — either a real row or the transient custom item
+function currentItem(){
+  const sel = document.getElementById('sizeSel');
+  if(sel.value==='__custom__') return state.customItem;
+  return currentRows()[Number(sel.value)||0];
 }
 const hexWeight = hex => Math.round(hex*hex*0.0068*10000)/10000;   // kg/m, formula from CONN.xlsx
 function fillSizes(){
   const sel = document.getElementById('sizeSel');
   const rows = currentRows();
-  const opts = rows.map((r,i)=>`<option value="${i}">${r.size}${r.custom?' ✎':''}</option>`).join('') || '<option value="">— no data —</option>';
+  let opts = rows.map((r,i)=>`<option value="${i}">${r.size}</option>`).join('') || '<option value="">— no data —</option>';
+  if(state.customItem) opts = `<option value="__custom__">★ ${state.customItem.size} (custom · not saved)</option>` + opts;
   sel.innerHTML = opts + (state.cat==='connector' ? '<option value="__new__">➕ Add new item…</option>' : '');
+  if(state.customItem) sel.value='__custom__';   // keep the custom item selected
   renderItem();
 }
 function renderItem(){
-  const rows = currentRows();
   const sel = document.getElementById('sizeSel');
   if(sel.value==='__new__') return;   // the "Add new item…" option opens the modal instead
-  const idx = Number(sel.value)||0;
-  const item = rows[idx];
+  const item = currentItem();
   const bd = document.getElementById('breakdown');
   const note = document.getElementById('itemNote');
   if(!item){ document.getElementById('unitPrice').textContent='₹0.00'; bd.innerHTML=''; note.textContent=''; return; }
@@ -467,15 +469,15 @@ function segGroup(id, onPick){
     };
   });
 }
-segGroup('segCat', v=>{ state.cat=v; fillSizes(); renderTable(); });
-segGroup('segType', v=>{ state.type=v; fillSizes(); renderTable(); });
+segGroup('segCat', v=>{ state.cat=v; state.customItem=null; fillSizes(); renderTable(); });
+segGroup('segType', v=>{ state.type=v; state.customItem=null; fillSizes(); renderTable(); });
 segGroup('segGrade', v=>{ state.grade=v; renderItem(); });
 
 let niReturnIdx = 0;   // size to fall back to if the user cancels "Add new item…"
 document.getElementById('sizeSel').onchange = ()=>{
   const sel = document.getElementById('sizeSel');
   if(sel.value==='__new__'){ openNewItem(); return; }
-  niReturnIdx = Number(sel.value)||0;
+  if(sel.value!=='__custom__') niReturnIdx = Number(sel.value)||0;
   renderItem();
 };
 document.getElementById('qty').oninput = renderItem;
@@ -492,7 +494,9 @@ function openNewItem(){
 }
 function closeNewItem(){
   document.getElementById('niModal').classList.remove('show');
-  const sel = document.getElementById('sizeSel'); sel.value = String(niReturnIdx); renderItem();
+  const sel = document.getElementById('sizeSel');
+  sel.value = state.customItem ? '__custom__' : String(niReturnIdx);
+  renderItem();
 }
 function niPreview(){
   const bh=Number(document.getElementById('niBodyHex').value)||0, bl=Number(document.getElementById('niBodyLen').value)||0;
@@ -508,25 +512,21 @@ document.getElementById('niSave').onclick = ()=>{
   const err = document.getElementById('niErr');
   const size = document.getElementById('niSize').value.trim();
   if(!size){ err.textContent='Enter a size name.'; return; }
-  const rows = ensureRows();
-  if(rows.some(r=>r.size.toLowerCase()===size.toLowerCase())){ err.textContent='That size already exists.'; return; }
   const bh=Number(document.getElementById('niBodyHex').value)||0, bl=Number(document.getElementById('niBodyLen').value)||0;
   const nh=Number(document.getElementById('niNutHex').value)||0, nl=Number(document.getElementById('niNutLen').value)||0;
-  rows.push({ size,
+  // transient item — priced in the calculator but NOT added to the size list or price sheet
+  state.customItem = { size,
     hex: bh||null, weight: bh? hexWeight(bh): null, length: bl||null,
     nutHex: nh||null, nutWeight: nh? hexWeight(nh): null, nutLength: nl||null,
-    ferrule:0, nut304:0, nut316:0, labour:0, custom:true });
-  persistData();
+    ferrule:0, nut304:0, nut316:0, labour:0, custom:true };
   document.getElementById('niModal').classList.remove('show');
-  fillSizes();
-  const sel = document.getElementById('sizeSel'); niReturnIdx = rows.length-1; sel.value = String(niReturnIdx);
+  fillSizes();      // shows the ★ custom option and selects it
   renderAll();
-  toast('Added '+size);
+  toast('Custom item priced (not saved to list)');
 };
 
 document.getElementById('saveRate').onclick = ()=>{
-  const rows = currentRows();
-  const item = rows[Number(document.getElementById('sizeSel').value)||0];
+  const item = currentItem();
   if(!item) return;
   const note = document.getElementById('itemNote');
   if(!state.rate304 && !state.rate316){
@@ -600,7 +600,7 @@ function renderPo(){
   tb.querySelectorAll('button[data-i]').forEach(b=> b.onclick=()=>{ po.splice(Number(b.dataset.i),1); savePo(); renderPo(); });
 }
 document.getElementById('addToPo').onclick = ()=>{
-  const item = currentRows()[Number(document.getElementById('sizeSel').value)||0];
+  const item = currentItem();
   if(!item) return;
   const qty = Math.max(1, Number(document.getElementById('qty').value)||1);
   po.push({ category:state.cat, type:state.type, grade:state.grade, size:item.size, qty, unitPrice: priceOf(item, state.grade).total });
