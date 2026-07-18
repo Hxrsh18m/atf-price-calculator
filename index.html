@@ -178,6 +178,14 @@
       <div class="grade" id="unitGrade">per piece</div>
     </div>
     <div class="brk" id="breakdown"></div>
+    <div class="row" style="margin-top:12px;align-items:flex-end">
+      <div class="fld" style="max-width:240px">
+        <label>Per-piece rate (editable · round off)</label>
+        <input class="rateinput" id="unitEdit" type="number" min="0" step="0.01">
+        <div class="hint">Auto-fills from the calculated price. Edit to round off — used for Total &amp; the Purchase Order.</div>
+      </div>
+      <button class="btn" id="roundBtn" style="height:44px" title="Round to the nearest rupee">Round ₹</button>
+    </div>
     <div class="remarkbar">
       <div class="remark empty" id="itemRemark">No rate saved for this size yet.</div>
       <button class="btn save" id="saveRate">💾 Save current rate for this size</button>
@@ -392,18 +400,28 @@ function fillSizes(){
   sel.value = state.customItem ? '__custom__' : (rows.length ? '0' : '');
   renderItem();
 }
+const round2 = n => Math.round(n*100)/100;
+function currentUnitPrice(){   // effective per-piece price = the (editable) round-off field
+  const el = document.getElementById('unitEdit');
+  const v = Number(el.value);
+  return (el.value!=='' && isFinite(v) && v>=0) ? v : 0;
+}
+function updateTotal(){
+  const qty = Math.max(1, Number(document.getElementById('qty').value)||1);
+  document.getElementById('totalPrice').textContent = rupee(currentUnitPrice()*qty);
+}
 function renderItem(){
   const sel = document.getElementById('sizeSel');
   if(sel.value==='__new__') return;   // the "Add new item…" option opens the modal instead
   const item = currentItem();
   const bd = document.getElementById('breakdown');
   const note = document.getElementById('itemNote');
-  if(!item){ document.getElementById('unitPrice').textContent='₹0.00'; bd.innerHTML=''; note.textContent=''; return; }
+  if(!item){ document.getElementById('unitPrice').textContent='₹0.00'; document.getElementById('unitEdit').value=''; document.getElementById('totalPrice').textContent='₹0.00'; bd.innerHTML=''; note.textContent=''; return; }
   const p = priceOf(item, state.grade);
-  const qty = Math.max(1, Number(document.getElementById('qty').value)||1);
   document.getElementById('unitPrice').textContent = rupee(p.total);
-  document.getElementById('unitGrade').textContent = `per piece · SS ${state.grade}`;
-  document.getElementById('totalPrice').textContent = rupee(p.total*qty);
+  document.getElementById('unitGrade').textContent = `calculated · per piece · SS ${state.grade}`;
+  document.getElementById('unitEdit').value = round2(p.total);   // reset round-off field to the fresh calc
+  updateTotal();
 
   let chips = [`<span class="chip">Body <b>${rupee(p.material)}</b> <span class="muted">(metal ${rupee(p.metal)} + labour ${rupee(p.labour)})</span></span>`];
   if(state.cat==='connector'){
@@ -482,7 +500,13 @@ document.getElementById('sizeSel').onchange = ()=>{
   if(sel.value!=='__custom__') niReturnIdx = Number(sel.value)||0;
   renderItem();
 };
-document.getElementById('qty').oninput = renderItem;
+document.getElementById('qty').oninput = updateTotal;   // qty change keeps your rounded per-piece rate
+document.getElementById('unitEdit').oninput = updateTotal;
+document.getElementById('roundBtn').onclick = ()=>{
+  const el = document.getElementById('unitEdit');
+  el.value = Math.round(Number(el.value)||0);   // round off to the nearest rupee
+  updateTotal();
+};
 
 // ---- new custom item (body + nut built from hex & length, CONN.xlsx weight formula) ----
 function openNewItem(){
@@ -605,7 +629,7 @@ document.getElementById('addToPo').onclick = ()=>{
   const item = currentItem();
   if(!item) return;
   const qty = Math.max(1, Number(document.getElementById('qty').value)||1);
-  po.push({ category:state.cat, type:state.type, grade:state.grade, size:item.size, qty, unitPrice: priceOf(item, state.grade).total });
+  po.push({ category:state.cat, type:state.type, grade:state.grade, size:item.size, qty, unitPrice: currentUnitPrice() });
   savePo(); renderPo();
   const n=document.getElementById('itemNote');
   n.textContent = `✓ Added ${qty} × ${item.size} to the Purchase Order.`;
@@ -790,10 +814,33 @@ function armIdle(){
     if(!s || Date.now() > s.exp) signOut('Signed out after 5 minutes of inactivity.');
   }, 15000);
 }
+// Remove transient custom items that an older version accidentally saved to the price sheet.
+function stripCustom(d){
+  let changed = false;
+  ['connector','elbow'].forEach(cat=>{
+    const g = d && d[cat]; if(!g) return;
+    for(const t in g){
+      if(Array.isArray(g[t])){
+        const before = g[t].length;
+        g[t] = g[t].filter(r=>!r.custom);
+        if(g[t].length !== before) changed = true;
+      }
+    }
+  });
+  return changed;
+}
 function enterApp(role, id, data){
   window.__role = role; window.__published = data;
-  const stored = localStorage.getItem('atf_data');
-  state.data = (role==='admin' && stored) ? JSON.parse(stored) : JSON.parse(JSON.stringify(data));
+  const stored = (role==='admin') ? localStorage.getItem('atf_data') : null;
+  if(stored){
+    try{
+      const parsed = JSON.parse(stored);
+      if(stripCustom(parsed)) localStorage.setItem('atf_data', JSON.stringify(parsed));  // clean up leftovers
+      state.data = parsed;
+    }catch(e){ state.data = JSON.parse(JSON.stringify(data)); }
+  } else {
+    state.data = JSON.parse(JSON.stringify(data));
+  }
   applyRole(role);
   document.getElementById('gate').style.display='none';
   fillSizes(); renderTable();
