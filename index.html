@@ -512,14 +512,15 @@ function openView(item){
     h += vmRow('Length', vmFmt(item.length,' mm'));
     h += vmRow('Weight', vmFmt(item.weight,' kg/m'));
     h += `<div class="dh">Nut</div>`;
-    if(item.nutHex!=null || item.nutLength!=null){
+    const hasNutDims = (item.nutHex!=null || item.nutLength!=null);
+    if(hasNutDims){
       h += vmRow('Hex (across flats)', vmFmt(item.nutHex,' mm'));
       h += vmRow('Length', vmFmt(item.nutLength,' mm'));
-    } else {
-      h += vmRow('Cost · SS 304', item.nut304!=null? rupee(item.nut304) : vmFmt(null));
-      h += vmRow('Cost · SS 316', item.nut316!=null? rupee(item.nut316) : vmFmt(null));
-      h += `<div class="hint" style="margin-top:8px">Nut hex &amp; length aren't in the price sheet — only the nut cost is stored.</div>`;
     }
+    if(item.nut304!=null) h += vmRow('Cost · SS 304', rupee(item.nut304));
+    if(item.nut316!=null) h += vmRow('Cost · SS 316', rupee(item.nut316));
+    if(!hasNutDims)
+      h += `<div class="hint" style="margin-top:8px">Nut hex &amp; length aren't in this item yet — re-upload CONN.xlsx (with the Nut Rates sheet) to populate them.</div>`;
   } else {
     h += `<div class="dh">Body</div>`;
     h += vmRow('Forging', vmFmt(item.forging,' mm'));
@@ -794,8 +795,24 @@ function num(v){
   if(typeof v==='number') return v;
   const n=parseFloat(String(v).trim()); return isNaN(n)?null:n;
 }
+// "Nut Rates" sheet: OD -> nut hex & length (col A=OD, B=Hex, D=Length)
+function parseNutRates(wb){
+  const ws=wb.Sheets['Nut Rates']; const map={};
+  if(!ws) return map;
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+  for(let i=1;i<rows.length;i++){ const r=rows[i]; if(!r || r[0]==null) continue;
+    map[String(r[0]).trim().toUpperCase()] = {nutHex:num(r[1]), nutLength:num(r[3])};
+  }
+  return map;
+}
+// pull the tube OD out of a connector size, e.g. '1/8"BSP X 1/16"OD' -> '1/16', '... X 6MMOD' -> '6MM'
+function odToken(size){
+  const seg=String(size).split(/\s*X\s*/i).pop().trim();
+  return seg.replace(/OD\s*$/i,'').replace(/["“”]/g,'').trim().toUpperCase();
+}
 function parseConnectors(wb){
   const map={Male:'MALE CONN',Female:'FEMALE CONN',Union:'UNION'}; const out={};
+  const nutMap=parseNutRates(wb);
   for(const label in map){
     const ws=wb.Sheets[map[label]]; if(!ws) continue;
     const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
@@ -804,8 +821,11 @@ function parseConnectors(wb){
       const size=r[0]; if(size===null||String(size).trim()==='') continue;
       const hexv=num(r[1]); let weight=num(r[2]);
       if(weight===null && hexv!==null) weight=Math.round(hexv*hexv*0.0068*10000)/10000;
-      res.push({size:String(size).trim(),hex:hexv,weight,length:num(r[3]),
-        labour:num(r[6])||0,ferrule:num(r[7])||0,nut304:num(r[8])||0,nut316:num(r[9])||0});
+      const it={size:String(size).trim(),hex:hexv,weight,length:num(r[3]),
+        labour:num(r[6])||0,ferrule:num(r[7])||0,nut304:num(r[8])||0,nut316:num(r[9])||0};
+      const nm=nutMap[odToken(it.size)];
+      if(nm){ it.nutHex=nm.nutHex; it.nutLength=nm.nutLength; }   // nut hex & length from Nut Rates sheet
+      res.push(it);
     }
     out[label]=res;
   }
