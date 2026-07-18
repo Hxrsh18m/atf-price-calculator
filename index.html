@@ -74,6 +74,14 @@
   #toast.show{opacity:1}
   .uploads{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
   .uploads .btn{cursor:pointer}
+  /* new-item modal */
+  #niModal{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1100;display:none;align-items:center;justify-content:center;padding:20px}
+  #niModal.show{display:flex}
+  #niModal .card{max-width:460px;width:100%;margin:0;max-height:92vh;overflow:auto}
+  #niModal fieldset{border:1px solid var(--line);border-radius:10px;padding:12px;margin:12px 0}
+  #niModal legend{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.4px;padding:0 6px}
+  #niModal .calc{font-size:12px;color:var(--accent2);margin-top:8px;min-height:16px}
+  #niModal input{margin-bottom:2px}
 </style>
 </head>
 <body>
@@ -157,6 +165,11 @@
         <label>SS 316 rate (₹ / kg)</label>
         <input class="rateinput" id="rate316" type="number" min="0" step="1" placeholder="e.g. 550">
         <div class="hint">Today's raw material rate for 316 grade bar</div>
+      </div>
+      <div class="fld">
+        <label>Labour (₹ / piece)</label>
+        <input class="rateinput" id="labour" type="number" min="0" step="1" placeholder="e.g. 20">
+        <div class="hint">Manual labour charge added to every piece</div>
       </div>
     </div>
 
@@ -256,6 +269,37 @@
   </div>
 </div>
 
+<!-- NEW ITEM MODAL -->
+<div id="niModal">
+  <div class="card">
+    <h3 style="margin:0 0 4px">➕ Add new item</h3>
+    <div class="muted" style="font-size:12px;margin-bottom:8px" id="niCtx"></div>
+    <label>Size name</label>
+    <input id="niSize" placeholder="e.g. 1/2 inch" autocomplete="off">
+    <fieldset>
+      <legend>Body weight</legend>
+      <div class="row">
+        <div class="fld"><label>Hex (mm)</label><input id="niBodyHex" type="number" min="0" step="0.01" placeholder="across flats"></div>
+        <div class="fld"><label>Length (mm)</label><input id="niBodyLen" type="number" min="0" step="0.1"></div>
+      </div>
+      <div class="calc" id="niBodyCalc"></div>
+    </fieldset>
+    <fieldset>
+      <legend>Nut weight</legend>
+      <div class="row">
+        <div class="fld"><label>Hex (mm)</label><input id="niNutHex" type="number" min="0" step="0.01" placeholder="across flats"></div>
+        <div class="fld"><label>Length (mm)</label><input id="niNutLen" type="number" min="0" step="0.1"></div>
+      </div>
+      <div class="calc" id="niNutCalc"></div>
+    </fieldset>
+    <div id="niErr" class="note"></div>
+    <div style="display:flex;gap:8px;margin-top:6px">
+      <button class="btn save" id="niSave">Save item</button>
+      <button class="btn" id="niCancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script src="xlsx.full.min.js"></script>
@@ -266,6 +310,7 @@ const state = {
   data:null, cat:'connector', type:'Male', grade:'304',
   rate304: Number(localStorage.getItem('rate304')||0),
   rate316: Number(localStorage.getItem('rate316')||0),
+  labour: Number(localStorage.getItem('labour')||0),
 };
 
 const rupee = n => '₹' + (Math.round(n*100)/100).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -294,19 +339,26 @@ function remarkShort(rec){
 // ---- price math ----
 function connectorPrice(item, grade){
   const rate = grade==='304'? state.rate304 : state.rate316;
-  const nut  = grade==='304'? item.nut304   : item.nut316;
   const w = item.weight||0, L = item.length||0;
   const metal = (w/1000)*L*rate;            // (kg/m ÷ 1000) × mm × ₹/kg
-  const labour = item.labour||0;
+  const labour = state.labour||0;           // manual labour input (not from Excel)
   const material = metal + labour;          // material now includes labour
-  const addons = (item.ferrule||0)+(nut||0);
+  let nut, ferrule;
+  if(item.custom){                          // nut priced as a hex bar: (kg/m ÷ 1000) × mm × ₹/kg
+    nut = ((item.nutWeight||0)/1000)*(item.nutLength||0)*rate;
+    ferrule = 0;
+  } else {
+    nut = grade==='304'? item.nut304 : item.nut316;
+    ferrule = item.ferrule||0;
+  }
+  const addons = ferrule + (nut||0);
   const incomplete = (item.weight==null || item.length==null);   // no metal cost possible
-  return {metal, material, addons, labour, ferrule:item.ferrule||0, nut:nut||0, total: material+addons, incomplete};
+  return {metal, material, addons, labour, ferrule, nut:nut||0, total: material+addons, incomplete};
 }
 function elbowPrice(item, grade){
   const rate = grade==='304'? state.rate304 : state.rate316;
   const metal = (item.weight||0)*rate;      // finished kg × ₹/kg
-  const labour = item.labour||0;
+  const labour = state.labour||0;           // manual labour input (not from Excel)
   const material = metal + labour;          // material now includes labour
   const addons = (item.machining||0);
   const incomplete = (item.weight==null);
@@ -321,15 +373,24 @@ function currentRows(){
   const cat = state.data?.[state.cat] || {};
   return cat[state.type] || [];
 }
+function ensureRows(){                        // like currentRows but attached to state.data (for adding items)
+  if(!state.data[state.cat]) state.data[state.cat] = {};
+  if(!state.data[state.cat][state.type]) state.data[state.cat][state.type] = [];
+  return state.data[state.cat][state.type];
+}
+const hexWeight = hex => Math.round(hex*hex*0.0068*10000)/10000;   // kg/m, formula from CONN.xlsx
 function fillSizes(){
   const sel = document.getElementById('sizeSel');
   const rows = currentRows();
-  sel.innerHTML = rows.map((r,i)=>`<option value="${i}">${r.size}</option>`).join('') || '<option>— no data —</option>';
+  const opts = rows.map((r,i)=>`<option value="${i}">${r.size}${r.custom?' ✎':''}</option>`).join('') || '<option value="">— no data —</option>';
+  sel.innerHTML = opts + (state.cat==='connector' ? '<option value="__new__">➕ Add new item…</option>' : '');
   renderItem();
 }
 function renderItem(){
   const rows = currentRows();
-  const idx = Number(document.getElementById('sizeSel').value)||0;
+  const sel = document.getElementById('sizeSel');
+  if(sel.value==='__new__') return;   // the "Add new item…" option opens the modal instead
+  const idx = Number(sel.value)||0;
   const item = rows[idx];
   const bd = document.getElementById('breakdown');
   const note = document.getElementById('itemNote');
@@ -342,7 +403,7 @@ function renderItem(){
 
   let chips = [`<span class="chip">Body <b>${rupee(p.material)}</b> <span class="muted">(metal ${rupee(p.metal)} + labour ${rupee(p.labour)})</span></span>`];
   if(state.cat==='connector'){
-    chips.push(`<span class="chip">Ferrule <b>${rupee(p.ferrule)}</b></span>`);
+    if(!item.custom) chips.push(`<span class="chip">Ferrule <b>${rupee(p.ferrule)}</b></span>`);
     chips.push(`<span class="chip">Nut ${state.grade} <b>${rupee(p.nut)}</b></span>`);
   } else {
     chips.push(`<span class="chip">Machining <b>${rupee(p.machining)}</b></span>`);
@@ -361,8 +422,7 @@ function renderItem(){
   if(p.incomplete)
     warns.push(`⚠ Weight is not filled for this size in ${state.cat==='connector'?'CONN.xlsx':'elbow.xlsx'} — metal cost is ₹0, so this price is INCOMPLETE.`);
   if(!rate) warns.push(`Enter the SS ${state.grade} rate above to include material cost.`);
-  if(state.cat==='elbow' && p.labour===0 && p.machining===0)
-    warns.push('Elbow labour & machining charges are blank in elbow.xlsx — fill them there for a complete price.');
+  if(!state.labour) warns.push('Enter a labour charge above to include it in the price.');
   note.innerHTML = warns.join(' ');
 }
 
@@ -411,8 +471,58 @@ segGroup('segCat', v=>{ state.cat=v; fillSizes(); renderTable(); });
 segGroup('segType', v=>{ state.type=v; fillSizes(); renderTable(); });
 segGroup('segGrade', v=>{ state.grade=v; renderItem(); });
 
-document.getElementById('sizeSel').onchange = renderItem;
+let niReturnIdx = 0;   // size to fall back to if the user cancels "Add new item…"
+document.getElementById('sizeSel').onchange = ()=>{
+  const sel = document.getElementById('sizeSel');
+  if(sel.value==='__new__'){ openNewItem(); return; }
+  niReturnIdx = Number(sel.value)||0;
+  renderItem();
+};
 document.getElementById('qty').oninput = renderItem;
+
+// ---- new custom item (body + nut built from hex & length, CONN.xlsx weight formula) ----
+function openNewItem(){
+  ['niSize','niBodyHex','niBodyLen','niNutHex','niNutLen'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('niErr').textContent='';
+  document.getElementById('niBodyCalc').textContent='';
+  document.getElementById('niNutCalc').textContent='';
+  document.getElementById('niCtx').textContent = `${state.type} Connector · weight = Hex² × 0.0068 kg/m`;
+  document.getElementById('niModal').classList.add('show');
+  document.getElementById('niSize').focus();
+}
+function closeNewItem(){
+  document.getElementById('niModal').classList.remove('show');
+  const sel = document.getElementById('sizeSel'); sel.value = String(niReturnIdx); renderItem();
+}
+function niPreview(){
+  const bh=Number(document.getElementById('niBodyHex').value)||0, bl=Number(document.getElementById('niBodyLen').value)||0;
+  const nh=Number(document.getElementById('niNutHex').value)||0, nl=Number(document.getElementById('niNutLen').value)||0;
+  const bw=hexWeight(bh), nw=hexWeight(nh), r=state.rate304||0;
+  document.getElementById('niBodyCalc').textContent = bh ? `Weight ${bw} kg/m` + (bl&&r? ` · body metal = ${rupee((bw/1000)*bl*r)} @ 304 rate` : bl? ' · enter 304 rate to preview cost':'') : '';
+  document.getElementById('niNutCalc').textContent  = nh ? `Weight ${nw} kg/m` + (nl&&r? ` · nut metal = ${rupee((nw/1000)*nl*r)} @ 304 rate` : nl? ' · enter 304 rate to preview cost':'') : '';
+}
+['niBodyHex','niBodyLen','niNutHex','niNutLen'].forEach(id=>document.getElementById(id).addEventListener('input', niPreview));
+document.getElementById('niCancel').onclick = closeNewItem;
+document.getElementById('niModal').addEventListener('mousedown', e=>{ if(e.target.id==='niModal') closeNewItem(); });
+document.getElementById('niSave').onclick = ()=>{
+  const err = document.getElementById('niErr');
+  const size = document.getElementById('niSize').value.trim();
+  if(!size){ err.textContent='Enter a size name.'; return; }
+  const rows = ensureRows();
+  if(rows.some(r=>r.size.toLowerCase()===size.toLowerCase())){ err.textContent='That size already exists.'; return; }
+  const bh=Number(document.getElementById('niBodyHex').value)||0, bl=Number(document.getElementById('niBodyLen').value)||0;
+  const nh=Number(document.getElementById('niNutHex').value)||0, nl=Number(document.getElementById('niNutLen').value)||0;
+  rows.push({ size,
+    hex: bh||null, weight: bh? hexWeight(bh): null, length: bl||null,
+    nutHex: nh||null, nutWeight: nh? hexWeight(nh): null, nutLength: nl||null,
+    ferrule:0, nut304:0, nut316:0, labour:0, custom:true });
+  persistData();
+  document.getElementById('niModal').classList.remove('show');
+  fillSizes();
+  const sel = document.getElementById('sizeSel'); niReturnIdx = rows.length-1; sel.value = String(niReturnIdx);
+  renderAll();
+  toast('Added '+size);
+};
 
 document.getElementById('saveRate').onclick = ()=>{
   const rows = currentRows();
@@ -438,12 +548,16 @@ r304.value = state.rate304||''; r316.value = state.rate316||'';
 r304.oninput = ()=>{ state.rate304=Math.max(0,Number(r304.value)||0); localStorage.setItem('rate304',state.rate304); renderAll(); pushRate(); };
 r316.oninput = ()=>{ state.rate316=Math.max(0,Number(r316.value)||0); localStorage.setItem('rate316',state.rate316); renderAll(); pushRate(); };
 
-// Only admin publishes the daily rate to all devices (debounced).
+const labourEl = document.getElementById('labour');
+labourEl.value = state.labour||'';
+labourEl.oninput = ()=>{ state.labour=Math.max(0,Number(labourEl.value)||0); localStorage.setItem('labour',state.labour); renderAll(); pushRate(); };
+
+// Only admin publishes the daily rate + labour to all devices (debounced).
 let rateTimer;
 function pushRate(){
   if(window.__role!=='admin' || !(window.SYNC && window.SYNC.ready)) return;
   clearTimeout(rateTimer);
-  rateTimer = setTimeout(()=>window.SYNC.setRate(state.rate304, state.rate316), 500);
+  rateTimer = setTimeout(()=>window.SYNC.setRate(state.rate304, state.rate316, state.labour), 500);
 }
 
 // ---- Purchase Order (cart + client-side PDF; CRM wiring later) ----
@@ -728,6 +842,10 @@ window.applySharedState = function(d){
     state.rate316 = d.rate316; localStorage.setItem('rate316', d.rate316);
     const el=document.getElementById('rate316'); if(el) el.value = d.rate316 || '';
   }
+  if(typeof d.labour === 'number' && d.labour !== state.labour){
+    state.labour = d.labour; localStorage.setItem('labour', d.labour);
+    const el=document.getElementById('labour'); if(el) el.value = d.labour || '';
+  }
   // saved-rate remarks — stored under encoded keys with original key in `k`
   const sh={}, raw=d.saved||{};
   for(const ek in raw){ const v=raw[ek]; if(v && v.k) sh[v.k]={r304:v.r304, r316:v.r316, date:v.date}; }
@@ -770,8 +888,8 @@ try{
   const ref = doc(db, "shared", "state");
   window.SYNC = {
     ready:false,
-    async setRate(r304, r316){
-      try{ await setDoc(ref, {rate304:r304, rate316:r316, updatedAt:Date.now()}, {merge:true}); }
+    async setRate(r304, r316, labour){
+      try{ await setDoc(ref, {rate304:r304, rate316:r316, labour:labour||0, updatedAt:Date.now()}, {merge:true}); }
       catch(e){ console.warn('setRate', e); }
     },
     async setSaved(rawKey, rec){
