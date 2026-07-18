@@ -367,14 +367,12 @@ function connectorPrice(item, grade){
   const metal = (w/1000)*L*rate;            // (kg/m ÷ 1000) × mm × ₹/kg
   const labour = state.labour||0;           // manual labour input (not from Excel)
   const material = metal + labour;          // material now includes labour
-  let nut, ferrule;
-  if(item.custom){                          // nut priced as a hex bar: (kg/m ÷ 1000) × mm × ₹/kg
-    nut = ((item.nutWeight||0)/1000)*(item.nutLength||0)*rate;
-    ferrule = 0;
-  } else {
-    nut = grade==='304'? item.nut304 : item.nut316;
-    ferrule = item.ferrule||0;
-  }
+  const ferrule = item.ferrule||0;          // 0 for custom items
+  let nut;
+  if(item.nutWeight!=null && item.nutLength!=null)   // nut priced from its metal, follows the live rate
+    nut = (item.nutWeight/1000)*item.nutLength*rate;
+  else                                                // fallback: fixed nut price from the sheet
+    nut = (grade==='304'? item.nut304 : item.nut316) || 0;
   const addons = ferrule + (nut||0);
   const incomplete = (item.weight==null || item.length==null);   // no metal cost possible
   return {metal, material, addons, labour, ferrule, nut:nut||0, total: material+addons, incomplete};
@@ -512,15 +510,18 @@ function openView(item){
     h += vmRow('Length', vmFmt(item.length,' mm'));
     h += vmRow('Weight', vmFmt(item.weight,' kg/m'));
     h += `<div class="dh">Nut</div>`;
-    const hasNutDims = (item.nutHex!=null || item.nutLength!=null);
+    const hasNutDims = (item.nutWeight!=null && item.nutLength!=null);
     if(hasNutDims){
       h += vmRow('Hex (across flats)', vmFmt(item.nutHex,' mm'));
       h += vmRow('Length', vmFmt(item.nutLength,' mm'));
-    }
-    if(item.nut304!=null) h += vmRow('Cost · SS 304', rupee(item.nut304));
-    if(item.nut316!=null) h += vmRow('Cost · SS 316', rupee(item.nut316));
-    if(!hasNutDims)
+      h += vmRow('Weight', vmFmt(item.nutWeight,' kg/m'));
+      h += vmRow('Cost · SS 304 (live)', rupee((item.nutWeight/1000)*item.nutLength*(state.rate304||0)));
+      h += vmRow('Cost · SS 316 (live)', rupee((item.nutWeight/1000)*item.nutLength*(state.rate316||0)));
+    } else {
+      if(item.nut304!=null) h += vmRow('Cost · SS 304', rupee(item.nut304));
+      if(item.nut316!=null) h += vmRow('Cost · SS 316', rupee(item.nut316));
       h += `<div class="hint" style="margin-top:8px">Nut hex &amp; length aren't in this item yet — re-upload CONN.xlsx (with the Nut Rates sheet) to populate them.</div>`;
+    }
   } else {
     h += `<div class="dh">Body</div>`;
     h += vmRow('Forging', vmFmt(item.forging,' mm'));
@@ -801,7 +802,7 @@ function parseNutRates(wb){
   if(!ws) return map;
   const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
   for(let i=1;i<rows.length;i++){ const r=rows[i]; if(!r || r[0]==null) continue;
-    map[String(r[0]).trim().toUpperCase()] = {nutHex:num(r[1]), nutLength:num(r[3])};
+    map[String(r[0]).trim().toUpperCase()] = {nutHex:num(r[1]), nutWeight:num(r[2]), nutLength:num(r[3])};
   }
   return map;
 }
@@ -824,7 +825,7 @@ function parseConnectors(wb){
       const it={size:String(size).trim(),hex:hexv,weight,length:num(r[3]),
         labour:num(r[6])||0,ferrule:num(r[7])||0,nut304:num(r[8])||0,nut316:num(r[9])||0};
       const nm=nutMap[odToken(it.size)];
-      if(nm){ it.nutHex=nm.nutHex; it.nutLength=nm.nutLength; }   // nut hex & length from Nut Rates sheet
+      if(nm){ it.nutHex=nm.nutHex; it.nutWeight=nm.nutWeight; it.nutLength=nm.nutLength; }   // nut dims from Nut Rates sheet
       res.push(it);
     }
     out[label]=res;
