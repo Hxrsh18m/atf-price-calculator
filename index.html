@@ -282,21 +282,23 @@
     <div class="muted" style="font-size:12px;margin-bottom:8px" id="niCtx"></div>
     <label>Size name</label>
     <input id="niSize" placeholder="e.g. 1/2 inch" autocomplete="off">
-    <fieldset>
-      <legend>Body weight</legend>
+    <!-- Connector / Tube Nut: hex + length -->
+    <fieldset id="niHexGrp">
+      <legend id="niHexLeg">Dimensions</legend>
       <div class="row">
-        <div class="fld"><label>Hex (mm)</label><input id="niBodyHex" type="number" min="0" step="0.01" placeholder="across flats"></div>
-        <div class="fld"><label>Length (mm)</label><input id="niBodyLen" type="number" min="0" step="0.1"></div>
+        <div class="fld"><label>Hex (mm)</label><input id="niHex" type="number" min="0" step="0.01" placeholder="across flats"></div>
+        <div class="fld"><label>Length (mm)</label><input id="niLen" type="number" min="0" step="0.1"></div>
       </div>
-      <div class="calc" id="niBodyCalc"></div>
+      <div class="calc" id="niHexCalc"></div>
     </fieldset>
-    <fieldset>
-      <legend>Nut weight</legend>
+    <!-- Elbow: finished weight + machining -->
+    <fieldset id="niElbGrp">
+      <legend>Elbow</legend>
       <div class="row">
-        <div class="fld"><label>Hex (mm)</label><input id="niNutHex" type="number" min="0" step="0.01" placeholder="across flats"></div>
-        <div class="fld"><label>Length (mm)</label><input id="niNutLen" type="number" min="0" step="0.1"></div>
+        <div class="fld"><label>Weight (kg)</label><input id="niWt" type="number" min="0" step="0.001" placeholder="finished kg"></div>
+        <div class="fld"><label>Machining (₹)</label><input id="niMach" type="number" min="0" step="1" placeholder="optional"></div>
       </div>
-      <div class="calc" id="niNutCalc"></div>
+      <div class="calc" id="niElbCalc"></div>
     </fieldset>
     <div id="niErr" class="note"></div>
     <div style="display:flex;gap:8px;margin-top:6px">
@@ -422,7 +424,7 @@ function fillSizes(){
   const sel = document.getElementById('sizeSel');
   const rows = currentRows();
   const realOpts = rows.map((r,i)=>`<option value="${i}">${r.size}</option>`).join('') || '<option value="">— no data —</option>';
-  const newOpt = state.cat==='connector' ? '<option value="__new__">➕ Add new item…</option>' : '';
+  const newOpt = '<option value="__new__">➕ Add new item…</option>';   // available for every product
   const customOpt = state.customItem ? `<option value="__custom__">★ ${state.customItem.size} (custom · not saved)</option>` : '';
   sel.innerHTML = newOpt + customOpt + realOpts;   // "Add new item" on top
   sel.value = state.customItem ? '__custom__' : (rows.length ? '0' : '');
@@ -560,13 +562,20 @@ document.getElementById('roundBtn').onclick = ()=>{
   el.value = Math.round(Number(el.value)||0);   // round off to the nearest rupee
 };
 
-// ---- new custom item (body + nut built from hex & length, CONN.xlsx weight formula) ----
+// ---- new custom item — fields depend on the product (transient, never saved) ----
+function niIsHex(){ return state.cat==='connector' || state.cat==='tubenut'; }   // hex+length products
 function openNewItem(){
-  ['niSize','niBodyHex','niBodyLen','niNutHex','niNutLen'].forEach(id=>document.getElementById(id).value='');
+  ['niSize','niHex','niLen','niWt','niMach'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('niErr').textContent='';
-  document.getElementById('niBodyCalc').textContent='';
-  document.getElementById('niNutCalc').textContent='';
-  document.getElementById('niCtx').textContent = `${state.type} Connector · weight = Hex² × 0.0068 kg/m`;
+  document.getElementById('niHexCalc').textContent='';
+  document.getElementById('niElbCalc').textContent='';
+  const hex = niIsHex();
+  document.getElementById('niHexGrp').style.display = hex ? '' : 'none';
+  document.getElementById('niElbGrp').style.display = hex ? 'none' : '';
+  document.getElementById('niHexLeg').textContent = state.cat==='tubenut' ? 'Nut dimensions' : 'Body dimensions';
+  document.getElementById('niCtx').textContent = hex
+    ? `${prodLabel()} · ${state.type} · weight = Hex² × 0.0068 kg/m`
+    : `${prodLabel()} · ${state.type} · price = Weight kg × rate + labour + machining`;
   document.getElementById('niModal').classList.add('show');
   document.getElementById('niSize').focus();
 }
@@ -577,26 +586,36 @@ function closeNewItem(){
   renderItem();
 }
 function niPreview(){
-  const bh=Number(document.getElementById('niBodyHex').value)||0, bl=Number(document.getElementById('niBodyLen').value)||0;
-  const nh=Number(document.getElementById('niNutHex').value)||0, nl=Number(document.getElementById('niNutLen').value)||0;
-  const bw=hexWeight(bh), nw=hexWeight(nh), r=state.rate304||0;
-  document.getElementById('niBodyCalc').textContent = bh ? `Weight ${bw} kg/m` + (bl&&r? ` · body metal = ${rupee((bw/1000)*bl*r)} @ 304 rate` : bl? ' · enter 304 rate to preview':'') : '';
-  document.getElementById('niNutCalc').textContent  = nh ? `Weight ${nw} kg/m` + (nl&&r? ` · nut metal = ${rupee((nw/1000)*nl*r)} @ 304 rate` : nl? ' · enter 304 rate to preview':'') : '';
+  const r=state.rate304||0;
+  if(niIsHex()){
+    const h=Number(document.getElementById('niHex').value)||0, l=Number(document.getElementById('niLen').value)||0;
+    const w=hexWeight(h);
+    document.getElementById('niHexCalc').textContent = h ? `Weight ${w} kg/m` + (l&&r? ` · metal = ${rupee((w/1000)*l*r)} @ 304 rate` : l? ' · enter 304 rate to preview':'') : '';
+  } else {
+    const wt=Number(document.getElementById('niWt').value)||0, m=Number(document.getElementById('niMach').value)||0;
+    document.getElementById('niElbCalc').textContent = wt ? (r? `metal = ${rupee(wt*r)} @ 304 rate` + (m?` + machining ${rupee(m)}`:'') : 'enter 304 rate to preview') : '';
+  }
 }
-['niBodyHex','niBodyLen','niNutHex','niNutLen'].forEach(id=>document.getElementById(id).addEventListener('input', niPreview));
+['niHex','niLen','niWt','niMach'].forEach(id=>document.getElementById(id).addEventListener('input', niPreview));
 document.getElementById('niCancel').onclick = closeNewItem;
 document.getElementById('niModal').addEventListener('mousedown', e=>{ if(e.target.id==='niModal') closeNewItem(); });
 document.getElementById('niSave').onclick = ()=>{
   const err = document.getElementById('niErr');
   const size = document.getElementById('niSize').value.trim();
   if(!size){ err.textContent='Enter a size name.'; return; }
-  const bh=Number(document.getElementById('niBodyHex').value)||0, bl=Number(document.getElementById('niBodyLen').value)||0;
-  const nh=Number(document.getElementById('niNutHex').value)||0, nl=Number(document.getElementById('niNutLen').value)||0;
   // transient item — priced in the calculator but NOT added to the size list or price sheet
-  state.customItem = { size,
-    hex: bh||null, weight: bh? hexWeight(bh): null, length: bl||null,
-    nutHex: nh||null, nutWeight: nh? hexWeight(nh): null, nutLength: nl||null,
-    ferrule:0, nut304:0, nut316:0, labour:0, custom:true };
+  let item;
+  if(state.cat==='tubenut'){
+    const h=Number(document.getElementById('niHex').value)||0, l=Number(document.getElementById('niLen').value)||0;
+    item = { size, nutHex:h||null, nutWeight: h? hexWeight(h): null, nutLength: l||null, custom:true };
+  } else if(state.cat==='elbow'){
+    const wt=Number(document.getElementById('niWt').value)||0, m=Number(document.getElementById('niMach').value)||0;
+    item = { size, weight: wt||null, machining: m||0, custom:true };
+  } else {
+    const h=Number(document.getElementById('niHex').value)||0, l=Number(document.getElementById('niLen').value)||0;
+    item = { size, hex:h||null, weight: h? hexWeight(h): null, length: l||null, ferrule:0, custom:true };
+  }
+  state.customItem = item;
   document.getElementById('niModal').classList.remove('show');
   fillSizes();      // shows the ★ custom option and selects it
   renderAll();
