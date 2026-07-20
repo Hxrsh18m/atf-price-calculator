@@ -178,17 +178,17 @@
         <div class="hint">Labour for the nut</div>
       </div>
     </div>
-    <!-- RATE row -->
+    <!-- RATE row: separate body & nut material rates for the selected grade -->
     <div class="row" style="margin-bottom:14px">
       <div class="fld">
-        <label>SS 304 rate (₹ / kg)</label>
-        <input class="rateinput" id="rate304" type="number" min="0" step="1" placeholder="e.g. 250">
-        <div class="hint">Today's raw material rate for 304 grade bar</div>
+        <label id="bodyRateLbl">Body rate — SS 304 (₹ / kg)</label>
+        <input class="rateinput" id="bodyRate" type="number" min="0" step="1" placeholder="e.g. 250">
+        <div class="hint">Material rate for the body (this grade)</div>
       </div>
       <div class="fld">
-        <label>SS 316 rate (₹ / kg)</label>
-        <input class="rateinput" id="rate316" type="number" min="0" step="1" placeholder="e.g. 550">
-        <div class="hint">Today's raw material rate for 316 grade bar</div>
+        <label id="nutRateLbl">Nut rate — SS 304 (₹ / kg)</label>
+        <input class="rateinput" id="nutRate" type="number" min="0" step="1" placeholder="e.g. 250">
+        <div class="hint">Material rate for the nut (this grade)</div>
       </div>
     </div>
 
@@ -226,13 +226,9 @@
       <span class="muted" id="poCount" style="font-size:12px"></span>
     </div>
     <div class="row" style="margin-bottom:12px;align-items:flex-end">
-      <div class="fld" style="flex:2">
-        <label>Vendor</label>
-        <select id="clientSel"></select>
-      </div>
-      <div class="fld" style="flex:0 0 auto">
-        <button class="btn" id="newClient">＋ New vendor</button>
-      </div>
+      <div class="fld"><label>Body vendor</label><select id="bodyClientSel"></select></div>
+      <div class="fld"><label>Nut vendor</label><select id="nutClientSel"></select></div>
+      <div class="fld" style="flex:0 0 auto"><button class="btn" id="newClient">＋ New vendor</button></div>
     </div>
     <div id="clientForm" style="display:none;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px">
       <div class="row">
@@ -262,7 +258,7 @@
       <table id="poTbl">
         <thead><tr>
           <th>#</th><th>Description</th><th class="num">Qty</th>
-          <th class="num">Unit ₹</th><th class="num">Amount ₹</th><th></th>
+          <th class="num">Body ₹</th><th class="num">Nut ₹</th><th class="num">Amount ₹</th><th></th>
         </tr></thead>
         <tbody></tbody>
       </table>
@@ -275,7 +271,7 @@
       <button class="btn primary" id="genPo">📄 Generate PO (PDF)</button>
       <button class="btn" id="clearPo">Clear PO</button>
     </div>
-    <div class="hint" id="poHint">Generates a 2-page PO PDF in the CRM format. Leave PO # blank for an auto number (ATF/PO/FY/n).</div>
+    <div class="hint" id="poHint">Generates two PO PDFs — a Body PO to the body vendor and a Nut PO to the nut vendor. Leave PO # blank for auto numbers.</div>
   </div>
 
   <!-- FULL PRICE LIST -->
@@ -356,8 +352,10 @@
 <script>
 const state = {
   data:null, cat:'connector', type:'Male', grade:'304',
-  rate304: Number(localStorage.getItem('rate304')||0),
-  rate316: Number(localStorage.getItem('rate316')||0),
+  bodyRate304: Number(localStorage.getItem('bodyRate304') || localStorage.getItem('rate304') || 0),
+  bodyRate316: Number(localStorage.getItem('bodyRate316') || localStorage.getItem('rate316') || 0),
+  nutRate304:  Number(localStorage.getItem('nutRate304')  || localStorage.getItem('rate304') || 0),
+  nutRate316:  Number(localStorage.getItem('nutRate316')  || localStorage.getItem('rate316') || 0),
   labourBody: Number(localStorage.getItem('labourBody') || localStorage.getItem('labour') || 0),
   labourNut: Number(localStorage.getItem('labourNut') || 0),
   nutIdx: 0,          // selected nut (index into state.data.nuts)
@@ -395,14 +393,15 @@ function bodyNut(item){
   return null;
 }
 function connectorPrice(item, grade, nutItem){
-  const rate = grade==='304'? state.rate304 : state.rate316;
+  const br = grade==='304'? state.bodyRate304 : state.bodyRate316;   // separate body & nut material rates
+  const nr = grade==='304'? state.nutRate304  : state.nutRate316;
   // BODY = body metal + body labour
-  const bodyMetal = ((item.weight||0)/1000)*(item.length||0)*rate;   // (kg/m ÷ 1000) × mm × ₹/kg
+  const bodyMetal = ((item.weight||0)/1000)*(item.length||0)*br;   // (kg/m ÷ 1000) × mm × ₹/kg
   const bodyLabour = state.labourBody||0;
   const body = bodyMetal + bodyLabour;
   // NUT = nut metal + nut labour
   const nu = nutItem || bodyNut(item) || {};
-  const nutMetal = ((nu.nutWeight||0)/1000)*(nu.nutLength||0)*rate;
+  const nutMetal = ((nu.nutWeight||0)/1000)*(nu.nutLength||0)*nr;
   const nutLabour = state.labourNut||0;
   const nut = nutMetal + nutLabour;
   const ferrule = item.ferrule||0;          // 0 for custom items
@@ -412,8 +411,8 @@ function connectorPrice(item, grade, nutItem){
           material: body, addons: ferrule + nut, total: body + ferrule + nut, incomplete};
 }
 function elbowPrice(item, grade){
-  const rate = grade==='304'? state.rate304 : state.rate316;
-  const bodyMetal = (item.weight||0)*rate;  // finished kg × ₹/kg
+  const br = grade==='304'? state.bodyRate304 : state.bodyRate316;
+  const bodyMetal = (item.weight||0)*br;  // finished kg × ₹/kg
   const bodyLabour = state.labourBody||0;
   const body = bodyMetal + bodyLabour;
   const machining = item.machining||0;
@@ -531,11 +530,11 @@ function renderItem(){
   rEl.textContent = txt || 'No rate saved for this size yet.';
   rEl.classList.toggle('empty', !txt);
 
-  const rate = state.grade==='304'? state.rate304 : state.rate316;
+  const br = state.grade==='304'? state.bodyRate304 : state.bodyRate316;
   const warns = [];
   if(p.incomplete)
     warns.push(`⚠ Weight is not filled for this size in ${state.cat==='connector'?'CONN.xlsx':'elbow.xlsx'} — metal cost is ₹0, so this price is INCOMPLETE.`);
-  if(!rate) warns.push(`Enter the SS ${state.grade} rate above to include material cost.`);
+  if(!br) warns.push(`Enter the body rate for SS ${state.grade} above to include material cost.`);
   note.innerHTML = warns.join(' ');
 }
 
@@ -592,8 +591,8 @@ function openView(item){
     if(item.nutLength!=null) h += vmRow('Length', vmFmt(item.nutLength,' mm'));
     if(item.nutWeight!=null) h += vmRow('Weight', vmFmt(item.nutWeight,' kg/m'));
     if(item.nutWeight!=null && item.nutLength!=null){
-      h += vmRow('Cost · SS 304 (live)', rupee((item.nutWeight/1000)*item.nutLength*(state.rate304||0) + (state.labourNut||0)));
-      h += vmRow('Cost · SS 316 (live)', rupee((item.nutWeight/1000)*item.nutLength*(state.rate316||0) + (state.labourNut||0)));
+      h += vmRow('Cost · SS 304 (live)', rupee((item.nutWeight/1000)*item.nutLength*(state.nutRate304||0) + (state.labourNut||0)));
+      h += vmRow('Cost · SS 316 (live)', rupee((item.nutWeight/1000)*item.nutLength*(state.nutRate316||0) + (state.labourNut||0)));
     }
   } else {
     h += `<div class="dh">Body</div>`;
@@ -619,7 +618,7 @@ function segGroup(id, onPick){
 }
 segGroup('segCat', v=>{ state.cat=v; state.customItem=null; fillSizes(); renderTable(); });
 segGroup('segType', v=>{ state.type=v; state.customItem=null; fillSizes(); renderTable(); });
-segGroup('segGrade', v=>{ state.grade=v; renderItem(); });
+segGroup('segGrade', v=>{ state.grade=v; syncRateInputs(); renderItem(); });
 
 let niReturnIdx = 0;   // size to fall back to if the user cancels "Add new item…"
 document.getElementById('sizeSel').onchange = ()=>{
@@ -658,9 +657,9 @@ function closeNewItem(){
 function niPreview(){
   const bh=Number(document.getElementById('niBodyHex').value)||0, bl=Number(document.getElementById('niBodyLen').value)||0;
   const nh=Number(document.getElementById('niNutHex').value)||0, nl=Number(document.getElementById('niNutLen').value)||0;
-  const bw=hexWeight(bh), nw=hexWeight(nh), r=state.rate304||0;
-  document.getElementById('niBodyCalc').textContent = bh ? `Weight ${bw} kg/m` + (bl&&r? ` · body metal = ${rupee((bw/1000)*bl*r)} @ 304 rate` : bl? ' · enter 304 rate to preview cost':'') : '';
-  document.getElementById('niNutCalc').textContent  = nh ? `Weight ${nw} kg/m` + (nl&&r? ` · nut metal = ${rupee((nw/1000)*nl*r)} @ 304 rate` : nl? ' · enter 304 rate to preview cost':'') : '';
+  const bw=hexWeight(bh), nw=hexWeight(nh), br=state.bodyRate304||0, nr=state.nutRate304||0;
+  document.getElementById('niBodyCalc').textContent = bh ? `Weight ${bw} kg/m` + (bl&&br? ` · body metal = ${rupee((bw/1000)*bl*br)} @ 304 body rate` : bl? ' · enter body rate to preview':'') : '';
+  document.getElementById('niNutCalc').textContent  = nh ? `Weight ${nw} kg/m` + (nl&&nr? ` · nut metal = ${rupee((nw/1000)*nl*nr)} @ 304 nut rate` : nl? ' · enter nut rate to preview':'') : '';
 }
 ['niBodyHex','niBodyLen','niNutHex','niNutLen'].forEach(id=>document.getElementById(id).addEventListener('input', niPreview));
 document.getElementById('niCancel').onclick = closeNewItem;
@@ -686,11 +685,11 @@ document.getElementById('saveRate').onclick = ()=>{
   const item = currentItem();
   if(!item) return;
   const note = document.getElementById('itemNote');
-  if(!state.rate304 && !state.rate316){
-    note.textContent = 'Enter an SS 304 or 316 rate above before saving.'; return;
+  if(!state.bodyRate304 && !state.bodyRate316){
+    note.textContent = 'Enter a body rate above before saving.'; return;
   }
   const now = new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
-  const rec = { r304: state.rate304||0, r316: state.rate316||0, date: now };
+  const rec = { r304: state.bodyRate304||0, r316: state.bodyRate316||0, date: now };
   setLastRate(item.size, rec);
   const synced = window.SYNC && window.SYNC.ready;
   if(synced) window.SYNC.setSaved(rateKey(state.cat,state.type,item.size), rec);  // sync to all devices
@@ -700,10 +699,20 @@ document.getElementById('saveRate').onclick = ()=>{
 };
 document.getElementById('search').oninput = renderTable;
 
-const r304 = document.getElementById('rate304'), r316 = document.getElementById('rate316');
-r304.value = state.rate304||''; r316.value = state.rate316||'';
-r304.oninput = ()=>{ state.rate304=Math.max(0,Number(r304.value)||0); localStorage.setItem('rate304',state.rate304); renderAll(); pushRate(); };
-r316.oninput = ()=>{ state.rate316=Math.max(0,Number(r316.value)||0); localStorage.setItem('rate316',state.rate316); renderAll(); pushRate(); };
+const bodyRateEl = document.getElementById('bodyRate'), nutRateEl = document.getElementById('nutRate');
+function syncRateInputs(){   // show the current grade's body/nut rates and update the labels
+  bodyRateEl.value = (state.grade==='304'? state.bodyRate304 : state.bodyRate316) || '';
+  nutRateEl.value  = (state.grade==='304'? state.nutRate304  : state.nutRate316)  || '';
+  document.getElementById('bodyRateLbl').textContent = `Body rate — SS ${state.grade} (₹ / kg)`;
+  document.getElementById('nutRateLbl').textContent  = `Nut rate — SS ${state.grade} (₹ / kg)`;
+}
+syncRateInputs();
+bodyRateEl.oninput = ()=>{ const v=Math.max(0,Number(bodyRateEl.value)||0);
+  if(state.grade==='304'){ state.bodyRate304=v; localStorage.setItem('bodyRate304',v); } else { state.bodyRate316=v; localStorage.setItem('bodyRate316',v); }
+  renderAll(); pushRate(); };
+nutRateEl.oninput = ()=>{ const v=Math.max(0,Number(nutRateEl.value)||0);
+  if(state.grade==='304'){ state.nutRate304=v; localStorage.setItem('nutRate304',v); } else { state.nutRate316=v; localStorage.setItem('nutRate316',v); }
+  renderAll(); pushRate(); };
 
 const labourBodyEl = document.getElementById('labourBody');
 labourBodyEl.value = state.labourBody||'';
@@ -718,12 +727,16 @@ let rateTimer;
 function pushRate(){
   if(window.__role!=='admin' || !(window.SYNC && window.SYNC.ready)) return;
   clearTimeout(rateTimer);
-  rateTimer = setTimeout(()=>window.SYNC.setRate(state.rate304, state.rate316, state.labourBody, state.labourNut), 500);
+  rateTimer = setTimeout(()=>window.SYNC.setRate({
+    bodyRate304:state.bodyRate304, bodyRate316:state.bodyRate316,
+    nutRate304:state.nutRate304, nutRate316:state.nutRate316,
+    labourBody:state.labourBody, labourNut:state.labourNut }), 500);
 }
 
 // ---- Purchase Order (cart + client-side PDF; CRM wiring later) ----
 const PO_KEY='atf_po', CLIENTS_KEY='atf_clients';
-let po = (()=>{ try{ return JSON.parse(localStorage.getItem(PO_KEY))||[]; }catch(e){ return []; } })();
+let po = (()=>{ try{ const a=JSON.parse(localStorage.getItem(PO_KEY))||[];
+  return a.map(it=> it.bodyPart!=null ? it : {...it, bodyPart: it.unitPrice||0, nutPart:0}); }catch(e){ return []; } })();
 function savePo(){ localStorage.setItem(PO_KEY, JSON.stringify(po)); }
 
 // TODO(CRM): replace loadClients() with GET /api/customers once the CRM API is ready.
@@ -736,10 +749,12 @@ function loadClients(){
 }
 function saveClients(list){ localStorage.setItem(CLIENTS_KEY, JSON.stringify(list)); }
 function fillClients(selectId){
-  const sel=document.getElementById('clientSel'); const cur=sel.value;
-  sel.innerHTML='<option value="">— select client —</option>' +
+  const opts='<option value="">— select vendor —</option>' +
     loadClients().map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
-  sel.value = selectId || cur || '';
+  ['bodyClientSel','nutClientSel'].forEach(id=>{
+    const sel=document.getElementById(id); const cur=sel.value;
+    sel.innerHTML=opts; sel.value = selectId || cur || '';
+  });
 }
 function itemDesc(it){
   return `${it.type} ${it.category==='connector'?'Connector':'Elbow'} ${it.grade} · ${it.size}`
@@ -748,15 +763,16 @@ function itemDesc(it){
 function renderPo(){
   const tb=document.querySelector('#poTbl tbody'); let total=0;
   tb.innerHTML = po.length ? po.map((it,i)=>{
-    const amt=it.unitPrice*it.qty; total+=amt;
+    const bodyAmt=(it.bodyPart||0)*it.qty, nutAmt=(it.nutPart||0)*it.qty, amt=bodyAmt+nutAmt; total+=amt;
     return `<tr>
       <td>${i+1}</td><td>${itemDesc(it)}</td>
       <td class="num">${it.qty}</td>
-      <td class="num">${rupee(it.unitPrice)}</td>
+      <td class="num">${rupee(it.bodyPart||0)}</td>
+      <td class="num">${rupee(it.nutPart||0)}</td>
       <td class="num">${rupee(amt)}</td>
       <td><button class="btn" data-i="${i}" style="padding:2px 9px">✕</button></td>
     </tr>`;
-  }).join('') : `<tr><td colspan="6" class="muted" style="text-align:center;padding:16px">No items yet — configure an item above and click “Add to Purchase Order”.</td></tr>`;
+  }).join('') : `<tr><td colspan="7" class="muted" style="text-align:center;padding:16px">No items yet — configure an item above and click “Add to Purchase Order”.</td></tr>`;
   document.getElementById('poTotal').textContent = rupee(total);
   document.getElementById('poCount').textContent = po.length ? `${po.length} line item${po.length>1?'s':''}` : '';
   tb.querySelectorAll('button[data-i]').forEach(b=> b.onclick=()=>{ po.splice(Number(b.dataset.i),1); savePo(); renderPo(); });
@@ -765,8 +781,12 @@ document.getElementById('addToPo').onclick = ()=>{
   const item = currentItem();
   if(!item) return;
   const qty = Math.max(1, Number(document.getElementById('qty').value)||1);
-  const nutOd = state.cat==='connector' ? (nutList()[state.nutIdx]?.od || '') : '';
-  po.push({ category:state.cat, type:state.type, grade:state.grade, size:item.size, nutOd, qty, unitPrice: currentUnitPrice() });
+  const nutItem = state.cat==='connector' ? (item.custom? bodyNut(item) : (nutList()[state.nutIdx]||bodyNut(item))) : null;
+  const p = priceOf(item, state.grade, nutItem);
+  const nutOd = state.cat==='connector' ? (item.custom? '' : (nutList()[state.nutIdx]?.od || '')) : '';
+  // bodyPart = body metal + body labour;  nutPart = nut metal + nut labour  (ferrule stays off the vendor POs)
+  po.push({ category:state.cat, type:state.type, grade:state.grade, size:item.size, nutOd, qty,
+    bodyPart: p.body, nutPart: state.cat==='connector'? p.nut : 0 });
   savePo(); renderPo();
   const n=document.getElementById('itemNote');
   n.textContent = `✓ Added ${qty} × ${item.size} to the Purchase Order.`;
@@ -824,16 +844,34 @@ function numToWords(n){
   if(n) w+=three(n);
   return w.trim().replace(/\s+/g,' ');
 }
-function poDesc1(it){ return `SS ${it.grade} ${it.type} ${it.category==='connector'?'Connector':'Elbow'}`; }
-function poDesc2(it){ return it.size + (it.nutOd? ' / Nut '+it.nutOd : ''); }
+function vendorFrom(selId){ const sel=document.getElementById(selId); if(!sel.value) return null;
+  return loadClients().find(c=>c.id===sel.value) || {name: sel.options[sel.selectedIndex].text}; }
+function nextPoSeq(){ const s=Number(localStorage.getItem('atf_po_seq')||0)+1; localStorage.setItem('atf_po_seq',s); return s; }
 
 document.getElementById('genPo').onclick = ()=>{
   const hint=document.getElementById('poHint');
   if(!po.length){ hint.textContent='Add at least one item to the PO first.'; return; }
-  const sel=document.getElementById('clientSel');
-  if(!sel.value){ hint.textContent='Select a vendor first.'; return; }
-  const vendor = loadClients().find(c=>c.id===sel.value) || {name: sel.options[sel.selectedIndex].text};
-  generatePoPdf(vendor);
+  const bodyVendor=vendorFrom('bodyClientSel');
+  if(!bodyVendor){ hint.textContent='Select a body vendor first.'; return; }
+  const nutItems=po.filter(it=>it.category==='connector' && (it.nutPart||0)>0);
+  const nutVendor=vendorFrom('nutClientSel');
+  if(nutItems.length && !nutVendor){ hint.textContent='Select a nut vendor (there are connector nuts to order).'; return; }
+
+  const now=new Date(), base=document.getElementById('poNo').value.trim();
+  // BODY PO — body metal + body labour
+  const bodyLines=po.map(it=>({ d1:`SS ${it.grade} ${it.type} ${it.category==='connector'?'Connector Body':'Elbow'}`,
+    d2:it.size, qty:it.qty, unitPrice:it.bodyPart||0 }));
+  const bodyNo = base || `ATF/PO/${fyLabel(now)}/${nextPoSeq()}`;
+  makePoDoc(bodyVendor, bodyLines, bodyNo);
+  let msg='✓ Body PO ('+bodyNo+')';
+  // NUT PO — nut metal + nut labour
+  if(nutItems.length){
+    const nutLines=nutItems.map(it=>({ d1:`SS ${it.grade} Nut`, d2:'OD '+(it.nutOd||''), qty:it.qty, unitPrice:it.nutPart||0 }));
+    const nutNo = base ? base+'-N' : `ATF/PO/${fyLabel(now)}/${nextPoSeq()}`;
+    makePoDoc(nutVendor, nutLines, nutNo);
+    msg+=' + Nut PO ('+nutNo+')';
+  }
+  hint.textContent = msg + ' generated.';
 };
 function poLogo(doc, cx, topY, align){
   doc.setFont('helvetica','bold'); doc.setTextColor(...CLR.blue); doc.setFontSize(22);
@@ -842,15 +880,12 @@ function poLogo(doc, cx, topY, align){
   doc.text('Arihant Tubes & Fittings', cx, topY+16, {align});
   doc.setTextColor(40);
 }
-function generatePoPdf(vendor){
-  const hint=document.getElementById('poHint');
+function makePoDoc(vendor, lines, poNo){
   const jsPDF = window.jspdf && window.jspdf.jsPDF;
-  if(!jsPDF){ hint.textContent='PDF engine not loaded — check your connection and retry.'; return; }
+  if(!jsPDF){ document.getElementById('poHint').textContent='PDF engine not loaded — check your connection and retry.'; return; }
   const doc=new jsPDF({unit:'pt', format:'a4'});
   const M=40, R=555, PW=595, PGY=812;
   const now=new Date();
-  let poNo=document.getElementById('poNo').value.trim();
-  if(!poNo){ const seq=Number(localStorage.getItem('atf_po_seq')||0)+1; localStorage.setItem('atf_po_seq',seq); poNo=`ATF/PO/${fyLabel(now)}/${seq}`; }
   const gstPct=Math.max(0,Number(document.getElementById('poGst').value)||0);
   const payment=document.getElementById('poPayment').value.trim()||'—';
   const delRaw=document.getElementById('poDelivery').value;
@@ -889,13 +924,13 @@ function generatePoPdf(vendor){
   if(vendor.phone) rline(vendor.phone);
 
   // ===== ITEMS TABLE =====
-  const net=po.reduce((s,it)=>s+it.unitPrice*it.qty,0);
+  const net=lines.reduce((s,l)=>s+l.unitPrice*l.qty,0);
   const gst=net*gstPct/100;
   const grand=Math.round(net+gst);
   doc.autoTable({
     startY: Math.max(ly, ry)+18,
     head:[['Sr No','Description1','Description2','Quantity','Unit','Unit Price','Total']],
-    body: po.map((it,i)=>[String(i+1), poDesc1(it), poDesc2(it), amt(it.qty), 'Nos', amt(it.unitPrice), amt(it.unitPrice*it.qty)]),
+    body: lines.map((l,i)=>[String(i+1), l.d1, l.d2, amt(l.qty), 'Nos', amt(l.unitPrice), amt(l.qty*l.unitPrice)]),
     theme:'grid',
     styles:{fontSize:9, cellPadding:5, lineColor:[210,210,210], lineWidth:0.5, textColor:40},
     headStyles:{fillColor:CLR.blue, textColor:255, fontStyle:'bold', halign:'center'},
@@ -958,7 +993,6 @@ function generatePoPdf(vendor){
   doc.setFontSize(8); doc.setTextColor(150); doc.text('Page 2 of 2', R, PGY, {align:'right'});
 
   doc.save(poNo.replace(/[\/\\]/g,'-')+'.pdf');
-  hint.textContent='✓ PO PDF generated ('+poNo+').';
 }
 fillClients(); renderPo();
 // default delivery date = tomorrow
@@ -1165,24 +1199,17 @@ window.onSyncReady = ()=> setSyncBadge('● Live', 'var(--accent2)');
 window.onSyncError = ()=> setSyncBadge('● Offline (local only)', 'var(--warn)');
 window.applySharedState = function(d){
   d = d || {};
-  // daily rate — shared for everyone
-  if(typeof d.rate304 === 'number' && d.rate304 !== state.rate304){
-    state.rate304 = d.rate304; localStorage.setItem('rate304', d.rate304);
-    const el=document.getElementById('rate304'); if(el) el.value = d.rate304 || '';
-  }
-  if(typeof d.rate316 === 'number' && d.rate316 !== state.rate316){
-    state.rate316 = d.rate316; localStorage.setItem('rate316', d.rate316);
-    const el=document.getElementById('rate316'); if(el) el.value = d.rate316 || '';
-  }
-  const lb = (typeof d.labourBody==='number') ? d.labourBody : (typeof d.labour==='number' ? d.labour : undefined);
-  if(lb !== undefined && lb !== state.labourBody){
-    state.labourBody = lb; localStorage.setItem('labourBody', lb);
-    const el=document.getElementById('labourBody'); if(el) el.value = lb || '';
-  }
-  if(typeof d.labourNut === 'number' && d.labourNut !== state.labourNut){
-    state.labourNut = d.labourNut; localStorage.setItem('labourNut', d.labourNut);
-    const el=document.getElementById('labourNut'); if(el) el.value = d.labourNut || '';
-  }
+  // body & nut material rates + labour — shared for everyone (with fallback to old single-rate fields)
+  const setIf=(k,v)=>{ if(typeof v==='number' && v!==state[k]){ state[k]=v; localStorage.setItem(k,v); } };
+  setIf('bodyRate304', d.bodyRate304!==undefined? d.bodyRate304 : d.rate304);
+  setIf('bodyRate316', d.bodyRate316!==undefined? d.bodyRate316 : d.rate316);
+  setIf('nutRate304',  d.nutRate304 !==undefined? d.nutRate304  : d.rate304);
+  setIf('nutRate316',  d.nutRate316 !==undefined? d.nutRate316  : d.rate316);
+  setIf('labourBody',  d.labourBody !==undefined? d.labourBody  : d.labour);
+  setIf('labourNut',   d.labourNut);
+  if(typeof syncRateInputs==='function') syncRateInputs();
+  const lbEl=document.getElementById('labourBody'); if(lbEl) lbEl.value=state.labourBody||'';
+  const lnEl=document.getElementById('labourNut'); if(lnEl) lnEl.value=state.labourNut||'';
   // saved-rate remarks — stored under encoded keys with original key in `k`
   const sh={}, raw=d.saved||{};
   for(const ek in raw){ const v=raw[ek]; if(v && v.k) sh[v.k]={r304:v.r304, r316:v.r316, date:v.date}; }
@@ -1225,8 +1252,8 @@ try{
   const ref = doc(db, "shared", "state");
   window.SYNC = {
     ready:false,
-    async setRate(r304, r316, labourBody, labourNut){
-      try{ await setDoc(ref, {rate304:r304, rate316:r316, labourBody:labourBody||0, labourNut:labourNut||0, updatedAt:Date.now()}, {merge:true}); }
+    async setRate(payload){
+      try{ await setDoc(ref, {...payload, updatedAt:Date.now()}, {merge:true}); }
       catch(e){ console.warn('setRate', e); }
     },
     async setSaved(rawKey, rec){
