@@ -129,18 +129,15 @@
     <div class="row" style="margin-bottom:14px">
       <div class="fld">
         <label>Product</label>
-        <div class="seg" id="segCat">
-          <button data-v="connector" class="active">Connector</button>
-          <button data-v="elbow">Elbow</button>
-        </div>
+        <select id="prodSel">
+          <option value="connector">Connector</option>
+          <option value="elbow">Elbow</option>
+          <option value="tubenut">Tube Nut</option>
+        </select>
       </div>
       <div class="fld">
         <label>Type</label>
-        <div class="seg" id="segType">
-          <button data-v="Male" class="active">Male</button>
-          <button data-v="Female">Female</button>
-          <button data-v="Union">Union</button>
-        </div>
+        <select id="typeSel"></select>
       </div>
       <div class="fld">
         <label>Grade</label>
@@ -150,45 +147,27 @@
         </div>
       </div>
     </div>
-    <!-- BODY row -->
     <div class="row" style="margin-bottom:14px">
       <div class="fld" style="flex:3">
-        <label>Size (Body)</label>
+        <label>Size</label>
         <select id="sizeSel"></select>
       </div>
-      <div class="fld" style="flex:0 0 90px">
-        <label>Qty</label>
-        <input id="qty" type="number" min="1" step="1" value="1">
-      </div>
       <div class="fld">
-        <label>Labour — Body (₹ / piece)</label>
-        <input class="rateinput" id="labourBody" type="number" min="0" step="1" placeholder="e.g. 20">
-        <div class="hint">Labour for the body</div>
+        <label>Labour (₹ / piece)</label>
+        <input class="rateinput" id="labour" type="number" min="0" step="1" placeholder="e.g. 20">
+        <div class="hint">Labour charge added to the piece</div>
       </div>
     </div>
-    <!-- NUT row -->
-    <div class="row" style="margin-bottom:14px">
-      <div class="fld" style="flex:3" id="nutFld">
-        <label>Size (Nut)</label>
-        <select id="nutSel"></select>
-      </div>
-      <div class="fld">
-        <label>Labour — Nut (₹ / piece)</label>
-        <input class="rateinput" id="labourNut" type="number" min="0" step="1" placeholder="e.g. 10">
-        <div class="hint">Labour for the nut</div>
-      </div>
-    </div>
-    <!-- RATE row: separate body & nut material rates for the selected grade -->
     <div class="row" style="margin-bottom:14px">
       <div class="fld">
-        <label id="bodyRateLbl">Body rate — SS 304 (₹ / kg)</label>
-        <input class="rateinput" id="bodyRate" type="number" min="0" step="1" placeholder="e.g. 250">
-        <div class="hint">Material rate for the body (this grade)</div>
+        <label>SS 304 rate (₹ / kg)</label>
+        <input class="rateinput" id="rate304" type="number" min="0" step="1" placeholder="e.g. 250">
+        <div class="hint">Today's raw material rate for 304 grade bar</div>
       </div>
       <div class="fld">
-        <label id="nutRateLbl">Nut rate — SS 304 (₹ / kg)</label>
-        <input class="rateinput" id="nutRate" type="number" min="0" step="1" placeholder="e.g. 250">
-        <div class="hint">Material rate for the nut (this grade)</div>
+        <label>SS 316 rate (₹ / kg)</label>
+        <input class="rateinput" id="rate316" type="number" min="0" step="1" placeholder="e.g. 550">
+        <div class="hint">Today's raw material rate for 316 grade bar</div>
       </div>
     </div>
 
@@ -201,7 +180,7 @@
       <div class="fld" style="max-width:240px">
         <label>Per-piece rate (editable · round off)</label>
         <input class="rateinput" id="unitEdit" type="number" min="0" step="0.01">
-        <div class="hint">Auto-fills from the calculated price. Edit to round off — used for Total &amp; the Purchase Order.</div>
+        <div class="hint">Auto-fills from the calculated price. Edit to round off — this is what's used in the Purchase Order.</div>
       </div>
       <button class="btn" id="roundBtn" style="height:44px" title="Round to the nearest rupee">Round ₹</button>
     </div>
@@ -209,11 +188,7 @@
       <div class="remark empty" id="itemRemark">No rate saved for this size yet.</div>
       <button class="btn save" id="saveRate">💾 Save current rate for this size</button>
     </div>
-    <div class="result" style="margin-top:14px">
-      <div class="grade">Total (× qty):</div>
-      <div class="price" style="font-size:26px;color:#fff" id="totalPrice">₹0.00</div>
-    </div>
-    <div style="margin-top:14px">
+    <div style="margin-top:16px">
       <button class="btn primary" id="addToPo">➕ Add to Purchase Order</button>
     </div>
     <div class="note" id="itemNote"></div>
@@ -226,8 +201,7 @@
       <span class="muted" id="poCount" style="font-size:12px"></span>
     </div>
     <div class="row" style="margin-bottom:12px;align-items:flex-end">
-      <div class="fld"><label>Body vendor</label><select id="bodyClientSel"></select></div>
-      <div class="fld"><label>Nut vendor</label><select id="nutClientSel"></select></div>
+      <div class="fld" style="flex:2"><label>Vendor</label><select id="clientSel"></select></div>
       <div class="fld" style="flex:0 0 auto"><button class="btn" id="newClient">＋ New vendor</button></div>
     </div>
     <div id="clientForm" style="display:none;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px">
@@ -257,8 +231,8 @@
     <div class="tblwrap" style="max-height:none">
       <table id="poTbl">
         <thead><tr>
-          <th>#</th><th>Description</th><th class="num">Qty</th>
-          <th class="num">Body ₹</th><th class="num">Nut ₹</th><th class="num">Amount ₹</th><th></th>
+          <th>#</th><th>Description</th><th class="num" style="width:90px">Qty</th>
+          <th class="num">Unit ₹</th><th class="num">Amount ₹</th><th></th>
         </tr></thead>
         <tbody></tbody>
       </table>
@@ -271,7 +245,7 @@
       <button class="btn primary" id="genPo">📄 Generate PO (PDF)</button>
       <button class="btn" id="clearPo">Clear PO</button>
     </div>
-    <div class="hint" id="poHint">Generates two PO PDFs — a Body PO to the body vendor and a Nut PO to the nut vendor. Leave PO # blank for auto numbers.</div>
+    <div class="hint" id="poHint">Set the quantity for each line in the table above. Generate makes a PO PDF in the CRM format — leave PO # blank for an auto number.</div>
   </div>
 
   <!-- FULL PRICE LIST -->
@@ -286,10 +260,8 @@
         <thead>
           <tr>
             <th>Size</th>
-            <th class="num fn304">Body 304</th>
-            <th class="num fn316">Body 316</th>
-            <th class="num fn304">F + N (304)</th>
-            <th class="num fn316">F + N (316)</th>
+            <th class="num fn304">Metal 304</th>
+            <th class="num fn316">Metal 316</th>
             <th class="num fn304 pbold">Price 304</th>
             <th class="num fn316 pbold">Price 316</th>
             <th>Remark (last rate)</th>
@@ -350,15 +322,17 @@
 <script src="jspdf.umd.min.js"></script>
 <script src="jspdf.autotable.min.js"></script>
 <script>
+// products → the types shown in the Type dropdown for each
+const PRODUCTS = {
+  connector: { label:'Connector', types:['Male','Female','Union'] },
+  elbow:     { label:'Elbow',     types:['Male','Female','Union'] },
+  tubenut:   { label:'Tube Nut',  types:['Standard'] }
+};
 const state = {
   data:null, cat:'connector', type:'Male', grade:'304',
-  bodyRate304: Number(localStorage.getItem('bodyRate304') || localStorage.getItem('rate304') || 0),
-  bodyRate316: Number(localStorage.getItem('bodyRate316') || localStorage.getItem('rate316') || 0),
-  nutRate304:  Number(localStorage.getItem('nutRate304')  || localStorage.getItem('rate304') || 0),
-  nutRate316:  Number(localStorage.getItem('nutRate316')  || localStorage.getItem('rate316') || 0),
-  labourBody: Number(localStorage.getItem('labourBody') || localStorage.getItem('labour') || 0),
-  labourNut: Number(localStorage.getItem('labourNut') || 0),
-  nutIdx: 0,          // selected nut (index into state.data.nuts)
+  rate304: Number(localStorage.getItem('rate304') || localStorage.getItem('bodyRate304') || 0),
+  rate316: Number(localStorage.getItem('rate316') || localStorage.getItem('bodyRate316') || 0),
+  labour: Number(localStorage.getItem('labour') || localStorage.getItem('labourBody') || 0),
   customItem: null,   // transient one-off item from "Add new item" — never saved to the list
 };
 
@@ -385,47 +359,27 @@ function remarkShort(rec){
   return p.join(' · ')+(rec.date? ' <span class="muted">('+rec.date+')</span>' : '');
 }
 
-// ---- price math ----
-// The nut naturally matched to a body item (its baked OD dimensions).
-function bodyNut(item){
-  if(item && item.nutWeight!=null && item.nutLength!=null)
-    return {nutHex:item.nutHex, nutWeight:item.nutWeight, nutLength:item.nutLength};
-  return null;
-}
-function connectorPrice(item, grade, nutItem){
-  const br = grade==='304'? state.bodyRate304 : state.bodyRate316;   // separate body & nut material rates
-  const nr = grade==='304'? state.nutRate304  : state.nutRate316;
-  // BODY = body metal + body labour
-  const bodyMetal = ((item.weight||0)/1000)*(item.length||0)*br;   // (kg/m ÷ 1000) × mm × ₹/kg
-  const bodyLabour = state.labourBody||0;
-  const body = bodyMetal + bodyLabour;
-  // NUT = nut metal + nut labour
-  const nu = nutItem || bodyNut(item) || {};
-  const nutMetal = ((nu.nutWeight||0)/1000)*(nu.nutLength||0)*nr;
-  const nutLabour = state.labourNut||0;
-  const nut = nutMetal + nutLabour;
-  const ferrule = item.ferrule||0;          // 0 for custom items
-  const incomplete = (item.weight==null || item.length==null);
-  // material/addons kept as aliases so the price table keeps working
-  return {bodyMetal, bodyLabour, body, nutMetal, nutLabour, nut, ferrule,
-          material: body, addons: ferrule + nut, total: body + ferrule + nut, incomplete};
-}
-function elbowPrice(item, grade){
-  const br = grade==='304'? state.bodyRate304 : state.bodyRate316;
-  const bodyMetal = (item.weight||0)*br;  // finished kg × ₹/kg
-  const bodyLabour = state.labourBody||0;
-  const body = bodyMetal + bodyLabour;
-  const machining = item.machining||0;
-  const incomplete = (item.weight==null);
-  return {bodyMetal, bodyLabour, body, nutMetal:0, nutLabour:0, nut:0, ferrule:0, machining,
-          material: body, addons: machining, total: body + machining, incomplete};
-}
-function priceOf(item, grade, nutItem){
-  return state.cat==='connector'? connectorPrice(item,grade,nutItem) : elbowPrice(item,grade);
+// ---- price math ----  (Unit price = metal + labour; ferrule/nut are NOT included)
+function priceOf(item, grade){
+  const rate = grade==='304'? state.rate304 : state.rate316;
+  const labour = state.labour||0;
+  if(state.cat==='tubenut'){
+    const metal = ((item.nutWeight||0)/1000)*(item.nutLength||0)*rate;   // (kg/m ÷ 1000) × mm × ₹/kg
+    return {metal, labour, machining:0, total: metal+labour, incomplete:(item.nutWeight==null || item.nutLength==null)};
+  }
+  if(state.cat==='elbow'){
+    const metal = (item.weight||0)*rate;    // finished kg × ₹/kg
+    const machining = item.machining||0;
+    return {metal, labour, machining, total: metal+labour+machining, incomplete:(item.weight==null)};
+  }
+  // connector — body only (no ferrule, no nut)
+  const metal = ((item.weight||0)/1000)*(item.length||0)*rate;
+  return {metal, labour, machining:0, total: metal+labour, incomplete:(item.weight==null || item.length==null)};
 }
 
 // ---- rendering ----
 function currentRows(){
+  if(state.cat==='tubenut') return nutList().map(n=>({...n, size:n.od}));   // nut catalogue as sizes
   const cat = state.data?.[state.cat] || {};
   return cat[state.type] || [];
 }
@@ -457,23 +411,12 @@ function ensureNuts(){
   state.data.nuts = list;
 }
 function nutList(){ ensureNuts(); return state.data?.nuts || []; }
-function defaultNutIdx(bodyItem){
-  const nuts = nutList();
-  if(!bodyItem || !nuts.length) return 0;
-  const od = odToken(bodyItem.size);
-  const i = nuts.findIndex(n => String(n.od).toUpperCase() === od);
-  return i>=0 ? i : 0;
-}
-function fillNuts(){
-  const sel = document.getElementById('nutSel');
-  const nuts = nutList();
-  sel.innerHTML = nuts.map((n,i)=>`<option value="${i}">${n.od}  ·  hex ${n.nutHex} · ${n.nutLength}mm</option>`).join('')
-    || '<option value="">— no nuts —</option>';
-  if(state.nutIdx>=nuts.length) state.nutIdx = 0;
-  sel.value = String(state.nutIdx);
-  // the nut selector only applies to connectors
-  document.getElementById('nutFld').style.display = state.cat==='connector' ? '' : 'none';
-  document.getElementById('labourNut').closest('.fld').style.display = state.cat==='connector' ? '' : 'none';
+function fillTypes(){
+  const sel = document.getElementById('typeSel');
+  const types = (PRODUCTS[state.cat] || {types:[]}).types;
+  sel.innerHTML = types.map(t=>`<option value="${t}">${t}</option>`).join('');
+  if(!types.includes(state.type)) state.type = types[0];
+  sel.value = state.type;
 }
 function fillSizes(){
   const sel = document.getElementById('sizeSel');
@@ -482,10 +425,7 @@ function fillSizes(){
   const newOpt = state.cat==='connector' ? '<option value="__new__">➕ Add new item…</option>' : '';
   const customOpt = state.customItem ? `<option value="__custom__">★ ${state.customItem.size} (custom · not saved)</option>` : '';
   sel.innerHTML = newOpt + customOpt + realOpts;   // "Add new item" on top
-  // default selection: custom item if present, else the first real size (never the "Add new item" row)
   sel.value = state.customItem ? '__custom__' : (rows.length ? '0' : '');
-  state.nutIdx = defaultNutIdx(currentItem());   // auto-match the nut to the body's OD
-  fillNuts();
   renderItem();
 }
 const round2 = n => Math.round(n*100)/100;
@@ -494,33 +434,22 @@ function currentUnitPrice(){   // effective per-piece price = the (editable) rou
   const v = Number(el.value);
   return (el.value!=='' && isFinite(v) && v>=0) ? v : 0;
 }
-function updateTotal(){
-  const qty = Math.max(1, Number(document.getElementById('qty').value)||1);
-  document.getElementById('totalPrice').textContent = rupee(currentUnitPrice()*qty);
-}
+function prodLabel(){ return (PRODUCTS[state.cat]||{label:state.cat}).label; }
 function renderItem(){
   const sel = document.getElementById('sizeSel');
   if(sel.value==='__new__') return;   // the "Add new item…" option opens the modal instead
   const item = currentItem();
   const bd = document.getElementById('breakdown');
   const note = document.getElementById('itemNote');
-  if(!item){ document.getElementById('unitPrice').textContent='₹0.00'; document.getElementById('unitEdit').value=''; document.getElementById('totalPrice').textContent='₹0.00'; bd.innerHTML=''; note.textContent=''; return; }
-  const nutItem = state.cat==='connector'
-    ? (item.custom ? bodyNut(item) : (nutList()[state.nutIdx] || bodyNut(item)))   // custom items keep their own nut
-    : null;
-  const p = priceOf(item, state.grade, nutItem);
+  if(!item){ document.getElementById('unitPrice').textContent='₹0.00'; document.getElementById('unitEdit').value=''; bd.innerHTML=''; note.textContent=''; return; }
+  const p = priceOf(item, state.grade);
   document.getElementById('unitPrice').textContent = rupee(p.total);
-  document.getElementById('unitGrade').textContent = `calculated · per piece · SS ${state.grade}`;
+  document.getElementById('unitGrade').textContent = `${prodLabel()} · per piece · SS ${state.grade}`;
   document.getElementById('unitEdit').value = round2(p.total);   // reset round-off field to the fresh calc
-  updateTotal();
 
-  let chips = [`<span class="chip">Body <b>${rupee(p.body)}</b> <span class="muted">(metal ${rupee(p.bodyMetal)} + labour ${rupee(p.bodyLabour)})</span></span>`];
-  if(state.cat==='connector'){
-    if(!item.custom) chips.push(`<span class="chip">Ferrule <b>${rupee(p.ferrule)}</b></span>`);
-    chips.push(`<span class="chip">Nut <b>${rupee(p.nut)}</b> <span class="muted">(metal ${rupee(p.nutMetal)} + labour ${rupee(p.nutLabour)})</span></span>`);
-  } else {
-    chips.push(`<span class="chip">Machining <b>${rupee(p.machining)}</b></span>`);
-  }
+  let chips = [`<span class="chip">Metal <b>${rupee(p.metal)}</b></span>`,
+               `<span class="chip">Labour <b>${rupee(p.labour)}</b></span>`];
+  if(state.cat==='elbow') chips.push(`<span class="chip">Machining <b>${rupee(p.machining)}</b></span>`);
   bd.innerHTML = chips.join('');
 
   // last-rate remark for this size
@@ -530,11 +459,10 @@ function renderItem(){
   rEl.textContent = txt || 'No rate saved for this size yet.';
   rEl.classList.toggle('empty', !txt);
 
-  const br = state.grade==='304'? state.bodyRate304 : state.bodyRate316;
+  const rate = state.grade==='304'? state.rate304 : state.rate316;
   const warns = [];
-  if(p.incomplete)
-    warns.push(`⚠ Weight is not filled for this size in ${state.cat==='connector'?'CONN.xlsx':'elbow.xlsx'} — metal cost is ₹0, so this price is INCOMPLETE.`);
-  if(!br) warns.push(`Enter the body rate for SS ${state.grade} above to include material cost.`);
+  if(p.incomplete) warns.push(`⚠ Weight is not filled for this size — metal cost is ₹0, so this price is INCOMPLETE.`);
+  if(!rate) warns.push(`Enter the SS ${state.grade} rate above to include material cost.`);
   note.innerHTML = warns.join(' ');
 }
 
@@ -550,24 +478,22 @@ function renderTable(){
     const flag = warn ? ' <span class="wflag" title="Weight missing in Excel — metal cost not included">⚠</span>' : '';
     return `<tr${warn?' class="warn"':''}>
       <td>${r.size}${flag}</td>
-      <td class="num fn304">${rupee(a.material)}</td>
-      <td class="num fn316">${rupee(b.material)}</td>
-      <td class="num fn304">${rupee(a.addons)}</td>
-      <td class="num fn316">${rupee(b.addons)}</td>
+      <td class="num fn304">${rupee(a.metal)}</td>
+      <td class="num fn316">${rupee(b.metal)}</td>
       <td class="num price304 pbold">${rupee(a.total)}</td>
       <td class="num price316 pbold">${rupee(b.total)}</td>
       <td class="rem">${remarkShort(getLastRate(r.size))}</td>
-      <td><button class="btn viewbtn" data-fi="${fi}" title="View hex & length details">👁</button></td>
+      <td><button class="btn viewbtn" data-fi="${fi}" title="View dimensions">👁</button></td>
     </tr>`;
   }).join('');
   tb.querySelectorAll('.viewbtn').forEach(btn=> btn.onclick = ()=> openView(filtered[Number(btn.dataset.fi)]));
   const meta = document.getElementById('listMeta');
-  meta.textContent = `${filtered.length} of ${rows.length} sizes · ${state.cat} · ${state.type}`
+  meta.textContent = `${filtered.length} of ${rows.length} sizes · ${prodLabel()} · ${state.type}`
     + (incomplete ? `  ·  ⚠ ${incomplete} missing weight` : '');
   meta.style.color = incomplete ? 'var(--warn)' : '';
-  document.getElementById('listFormula').innerHTML = state.cat==='connector'
-    ? 'Body = (Body wt kg/m ÷ 1000) × Length × Rate + Body labour.   Nut = (Nut wt ÷ 1000) × Length × Rate + Nut labour.   Price = Body + Ferrule + Nut'
-    : 'Body = Weight kg × Rate ₹/kg + Body labour.   Price = Body + Machining';
+  document.getElementById('listFormula').innerHTML = state.cat==='elbow'
+    ? 'Price = Weight kg × Rate ₹/kg + Labour + Machining'
+    : 'Price = (Weight kg/m ÷ 1000) × Length mm × Rate ₹/kg + Labour   (ferrule not included)';
 }
 
 function renderAll(){ renderItem(); renderTable(); }
@@ -577,29 +503,27 @@ function vmFmt(v, unit){ return (v==null || v==='') ? '<span class="muted">—</
 function vmRow(label, val){ return `<div class="drow"><span>${label}</span><b>${val}</b></div>`; }
 function openView(item){
   if(!item) return;
-  const isConn = state.cat==='connector';
   document.getElementById('vmTitle').textContent = item.size;
-  document.getElementById('vmSub').textContent = `${state.type} ${isConn?'Connector':'Elbow'}`;
+  document.getElementById('vmSub').textContent = `${prodLabel()} · ${state.type}`;
   let h = '';
-  if(isConn){
-    h += `<div class="dh">Body</div>`;
-    h += vmRow('Hex (across flats)', vmFmt(item.hex,' mm'));
-    h += vmRow('Length', vmFmt(item.length,' mm'));
-    h += vmRow('Weight', vmFmt(item.weight,' kg/m'));
+  if(state.cat==='tubenut'){
     h += `<div class="dh">Nut</div>`;
-    if(item.nutHex!=null) h += vmRow('Hex (across flats)', vmFmt(item.nutHex,' mm'));
-    if(item.nutLength!=null) h += vmRow('Length', vmFmt(item.nutLength,' mm'));
-    if(item.nutWeight!=null) h += vmRow('Weight', vmFmt(item.nutWeight,' kg/m'));
-    if(item.nutWeight!=null && item.nutLength!=null){
-      h += vmRow('Cost · SS 304 (live)', rupee((item.nutWeight/1000)*item.nutLength*(state.nutRate304||0) + (state.labourNut||0)));
-      h += vmRow('Cost · SS 316 (live)', rupee((item.nutWeight/1000)*item.nutLength*(state.nutRate316||0) + (state.labourNut||0)));
-    }
-  } else {
+    h += vmRow('Hex (across flats)', vmFmt(item.nutHex,' mm'));
+    h += vmRow('Length', vmFmt(item.nutLength,' mm'));
+    h += vmRow('Weight', vmFmt(item.nutWeight,' kg/m'));
+  } else if(state.cat==='elbow'){
     h += `<div class="dh">Body</div>`;
     h += vmRow('Forging', vmFmt(item.forging,' mm'));
     h += vmRow('Weight', vmFmt(item.weight,' kg'));
     h += vmRow('Machining', item.machining!=null? rupee(item.machining) : vmFmt(null));
+  } else {
+    h += `<div class="dh">Body</div>`;
+    h += vmRow('Hex (across flats)', vmFmt(item.hex,' mm'));
+    h += vmRow('Length', vmFmt(item.length,' mm'));
+    h += vmRow('Weight', vmFmt(item.weight,' kg/m'));
   }
+  h += vmRow('Price · SS 304 (live)', rupee(priceOf(item,'304').total));
+  h += vmRow('Price · SS 316 (live)', rupee(priceOf(item,'316').total));
   document.getElementById('vmBody').innerHTML = h;
   document.getElementById('viewModal').classList.add('show');
 }
@@ -616,26 +540,24 @@ function segGroup(id, onPick){
     };
   });
 }
-segGroup('segCat', v=>{ state.cat=v; state.customItem=null; fillSizes(); renderTable(); });
-segGroup('segType', v=>{ state.type=v; state.customItem=null; fillSizes(); renderTable(); });
-segGroup('segGrade', v=>{ state.grade=v; syncRateInputs(); renderItem(); });
+document.getElementById('prodSel').onchange = e=>{
+  state.cat = e.target.value; state.customItem = null;
+  fillTypes();          // Type dropdown reflects the selected product
+  fillSizes(); renderTable();
+};
+document.getElementById('typeSel').onchange = e=>{ state.type = e.target.value; state.customItem=null; fillSizes(); renderTable(); };
+segGroup('segGrade', v=>{ state.grade=v; renderItem(); });
 
 let niReturnIdx = 0;   // size to fall back to if the user cancels "Add new item…"
 document.getElementById('sizeSel').onchange = ()=>{
   const sel = document.getElementById('sizeSel');
   if(sel.value==='__new__'){ openNewItem(); return; }
   if(sel.value!=='__custom__') niReturnIdx = Number(sel.value)||0;
-  state.nutIdx = defaultNutIdx(currentItem());   // auto-match nut to the newly picked body
-  fillNuts();
   renderItem();
 };
-document.getElementById('nutSel').onchange = e=>{ state.nutIdx = Number(e.target.value)||0; renderItem(); };
-document.getElementById('qty').oninput = updateTotal;   // qty change keeps your rounded per-piece rate
-document.getElementById('unitEdit').oninput = updateTotal;
 document.getElementById('roundBtn').onclick = ()=>{
   const el = document.getElementById('unitEdit');
   el.value = Math.round(Number(el.value)||0);   // round off to the nearest rupee
-  updateTotal();
 };
 
 // ---- new custom item (body + nut built from hex & length, CONN.xlsx weight formula) ----
@@ -657,9 +579,9 @@ function closeNewItem(){
 function niPreview(){
   const bh=Number(document.getElementById('niBodyHex').value)||0, bl=Number(document.getElementById('niBodyLen').value)||0;
   const nh=Number(document.getElementById('niNutHex').value)||0, nl=Number(document.getElementById('niNutLen').value)||0;
-  const bw=hexWeight(bh), nw=hexWeight(nh), br=state.bodyRate304||0, nr=state.nutRate304||0;
-  document.getElementById('niBodyCalc').textContent = bh ? `Weight ${bw} kg/m` + (bl&&br? ` · body metal = ${rupee((bw/1000)*bl*br)} @ 304 body rate` : bl? ' · enter body rate to preview':'') : '';
-  document.getElementById('niNutCalc').textContent  = nh ? `Weight ${nw} kg/m` + (nl&&nr? ` · nut metal = ${rupee((nw/1000)*nl*nr)} @ 304 nut rate` : nl? ' · enter nut rate to preview':'') : '';
+  const bw=hexWeight(bh), nw=hexWeight(nh), r=state.rate304||0;
+  document.getElementById('niBodyCalc').textContent = bh ? `Weight ${bw} kg/m` + (bl&&r? ` · body metal = ${rupee((bw/1000)*bl*r)} @ 304 rate` : bl? ' · enter 304 rate to preview':'') : '';
+  document.getElementById('niNutCalc').textContent  = nh ? `Weight ${nw} kg/m` + (nl&&r? ` · nut metal = ${rupee((nw/1000)*nl*r)} @ 304 rate` : nl? ' · enter 304 rate to preview':'') : '';
 }
 ['niBodyHex','niBodyLen','niNutHex','niNutLen'].forEach(id=>document.getElementById(id).addEventListener('input', niPreview));
 document.getElementById('niCancel').onclick = closeNewItem;
@@ -685,11 +607,11 @@ document.getElementById('saveRate').onclick = ()=>{
   const item = currentItem();
   if(!item) return;
   const note = document.getElementById('itemNote');
-  if(!state.bodyRate304 && !state.bodyRate316){
-    note.textContent = 'Enter a body rate above before saving.'; return;
+  if(!state.rate304 && !state.rate316){
+    note.textContent = 'Enter an SS 304 or 316 rate above before saving.'; return;
   }
   const now = new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
-  const rec = { r304: state.bodyRate304||0, r316: state.bodyRate316||0, date: now };
+  const rec = { r304: state.rate304||0, r316: state.rate316||0, date: now };
   setLastRate(item.size, rec);
   const synced = window.SYNC && window.SYNC.ready;
   if(synced) window.SYNC.setSaved(rateKey(state.cat,state.type,item.size), rec);  // sync to all devices
@@ -699,44 +621,28 @@ document.getElementById('saveRate').onclick = ()=>{
 };
 document.getElementById('search').oninput = renderTable;
 
-const bodyRateEl = document.getElementById('bodyRate'), nutRateEl = document.getElementById('nutRate');
-function syncRateInputs(){   // show the current grade's body/nut rates and update the labels
-  bodyRateEl.value = (state.grade==='304'? state.bodyRate304 : state.bodyRate316) || '';
-  nutRateEl.value  = (state.grade==='304'? state.nutRate304  : state.nutRate316)  || '';
-  document.getElementById('bodyRateLbl').textContent = `Body rate — SS ${state.grade} (₹ / kg)`;
-  document.getElementById('nutRateLbl').textContent  = `Nut rate — SS ${state.grade} (₹ / kg)`;
-}
-syncRateInputs();
-bodyRateEl.oninput = ()=>{ const v=Math.max(0,Number(bodyRateEl.value)||0);
-  if(state.grade==='304'){ state.bodyRate304=v; localStorage.setItem('bodyRate304',v); } else { state.bodyRate316=v; localStorage.setItem('bodyRate316',v); }
-  renderAll(); pushRate(); };
-nutRateEl.oninput = ()=>{ const v=Math.max(0,Number(nutRateEl.value)||0);
-  if(state.grade==='304'){ state.nutRate304=v; localStorage.setItem('nutRate304',v); } else { state.nutRate316=v; localStorage.setItem('nutRate316',v); }
-  renderAll(); pushRate(); };
+const r304 = document.getElementById('rate304'), r316 = document.getElementById('rate316');
+r304.value = state.rate304||''; r316.value = state.rate316||'';
+r304.oninput = ()=>{ state.rate304=Math.max(0,Number(r304.value)||0); localStorage.setItem('rate304',state.rate304); renderAll(); pushRate(); };
+r316.oninput = ()=>{ state.rate316=Math.max(0,Number(r316.value)||0); localStorage.setItem('rate316',state.rate316); renderAll(); pushRate(); };
 
-const labourBodyEl = document.getElementById('labourBody');
-labourBodyEl.value = state.labourBody||'';
-labourBodyEl.oninput = ()=>{ state.labourBody=Math.max(0,Number(labourBodyEl.value)||0); localStorage.setItem('labourBody',state.labourBody); renderAll(); pushRate(); };
+const labourEl = document.getElementById('labour');
+labourEl.value = state.labour||'';
+labourEl.oninput = ()=>{ state.labour=Math.max(0,Number(labourEl.value)||0); localStorage.setItem('labour',state.labour); renderAll(); pushRate(); };
 
-const labourNutEl = document.getElementById('labourNut');
-labourNutEl.value = state.labourNut||'';
-labourNutEl.oninput = ()=>{ state.labourNut=Math.max(0,Number(labourNutEl.value)||0); localStorage.setItem('labourNut',state.labourNut); renderAll(); pushRate(); };
-
-// Only admin publishes the daily rate + body/nut labour to all devices (debounced).
+// Only admin publishes the daily rate + labour to all devices (debounced).
 let rateTimer;
 function pushRate(){
   if(window.__role!=='admin' || !(window.SYNC && window.SYNC.ready)) return;
   clearTimeout(rateTimer);
   rateTimer = setTimeout(()=>window.SYNC.setRate({
-    bodyRate304:state.bodyRate304, bodyRate316:state.bodyRate316,
-    nutRate304:state.nutRate304, nutRate316:state.nutRate316,
-    labourBody:state.labourBody, labourNut:state.labourNut }), 500);
+    rate304:state.rate304, rate316:state.rate316, labour:state.labour }), 500);
 }
 
 // ---- Purchase Order (cart + client-side PDF; CRM wiring later) ----
 const PO_KEY='atf_po', CLIENTS_KEY='atf_clients';
 let po = (()=>{ try{ const a=JSON.parse(localStorage.getItem(PO_KEY))||[];
-  return a.map(it=> it.bodyPart!=null ? it : {...it, bodyPart: it.unitPrice||0, nutPart:0}); }catch(e){ return []; } })();
+  return a.map(it=> it.unitPrice!=null ? it : {...it, unitPrice:(it.bodyPart||0)+(it.nutPart||0)}); }catch(e){ return []; } })();
 function savePo(){ localStorage.setItem(PO_KEY, JSON.stringify(po)); }
 
 // TODO(CRM): replace loadClients() with GET /api/customers once the CRM API is ready.
@@ -749,48 +655,50 @@ function loadClients(){
 }
 function saveClients(list){ localStorage.setItem(CLIENTS_KEY, JSON.stringify(list)); }
 function fillClients(selectId){
-  const opts='<option value="">— select vendor —</option>' +
+  const sel=document.getElementById('clientSel'); const cur=sel.value;
+  sel.innerHTML='<option value="">— select vendor —</option>' +
     loadClients().map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
-  ['bodyClientSel','nutClientSel'].forEach(id=>{
-    const sel=document.getElementById(id); const cur=sel.value;
-    sel.innerHTML=opts; sel.value = selectId || cur || '';
-  });
+  sel.value = selectId || cur || '';
 }
+function prodName(cat){ return (PRODUCTS[cat]||{label:cat}).label; }
 function itemDesc(it){
-  return `${it.type} ${it.category==='connector'?'Connector':'Elbow'} ${it.grade} · ${it.size}`
-    + (it.nutOd ? ` · Nut ${it.nutOd}` : '');
+  return `${it.type} ${prodName(it.category)} ${it.grade} · ${it.size}`;
 }
 function renderPo(){
   const tb=document.querySelector('#poTbl tbody'); let total=0;
   tb.innerHTML = po.length ? po.map((it,i)=>{
-    const bodyAmt=(it.bodyPart||0)*it.qty, nutAmt=(it.nutPart||0)*it.qty, amt=bodyAmt+nutAmt; total+=amt;
+    const amt=(it.unitPrice||0)*(it.qty||1); total+=amt;
     return `<tr>
       <td>${i+1}</td><td>${itemDesc(it)}</td>
-      <td class="num">${it.qty}</td>
-      <td class="num">${rupee(it.bodyPart||0)}</td>
-      <td class="num">${rupee(it.nutPart||0)}</td>
+      <td class="num"><input class="poqty" data-i="${i}" type="number" min="1" step="1" value="${it.qty}" style="width:74px;text-align:right;padding:5px 7px"></td>
+      <td class="num">${rupee(it.unitPrice||0)}</td>
       <td class="num">${rupee(amt)}</td>
       <td><button class="btn" data-i="${i}" style="padding:2px 9px">✕</button></td>
     </tr>`;
-  }).join('') : `<tr><td colspan="7" class="muted" style="text-align:center;padding:16px">No items yet — configure an item above and click “Add to Purchase Order”.</td></tr>`;
+  }).join('') : `<tr><td colspan="6" class="muted" style="text-align:center;padding:16px">No items yet — configure an item above and click “Add to Purchase Order”.</td></tr>`;
   document.getElementById('poTotal').textContent = rupee(total);
   document.getElementById('poCount').textContent = po.length ? `${po.length} line item${po.length>1?'s':''}` : '';
   tb.querySelectorAll('button[data-i]').forEach(b=> b.onclick=()=>{ po.splice(Number(b.dataset.i),1); savePo(); renderPo(); });
+  tb.querySelectorAll('input.poqty').forEach(inp=> inp.onchange=()=>{   // edit qty right here in the PO
+    const i=Number(inp.dataset.i); po[i].qty=Math.max(1, Math.round(Number(inp.value)||1)); savePo();
+    setTimeout(renderPo, 0); });   // defer so the input's blur finishes before the table re-renders
 }
 document.getElementById('addToPo').onclick = ()=>{
   const item = currentItem();
   if(!item) return;
-  const qty = Math.max(1, Number(document.getElementById('qty').value)||1);
-  const nutItem = state.cat==='connector' ? (item.custom? bodyNut(item) : (nutList()[state.nutIdx]||bodyNut(item))) : null;
-  const p = priceOf(item, state.grade, nutItem);
-  const nutOd = state.cat==='connector' ? (item.custom? '' : (nutList()[state.nutIdx]?.od || '')) : '';
-  // bodyPart = body metal + body labour;  nutPart = nut metal + nut labour  (ferrule stays off the vendor POs)
-  po.push({ category:state.cat, type:state.type, grade:state.grade, size:item.size, nutOd, qty,
-    bodyPart: p.body, nutPart: state.cat==='connector'? p.nut : 0 });
-  savePo(); renderPo();
+  const unitPrice = currentUnitPrice();
+  // merge if the same product/type/grade/size is already in the PO (avoids duplicate lines)
+  const existing = po.find(it=> it.category===state.cat && it.type===state.type && it.grade===state.grade && it.size===item.size);
   const n=document.getElementById('itemNote');
-  n.textContent = `✓ Added ${qty} × ${item.size} to the Purchase Order.`;
-  setTimeout(()=>{ if(n.textContent.startsWith('✓ Added')) renderItem(); }, 2500);
+  if(existing){
+    existing.qty += 1; existing.unitPrice = unitPrice; savePo(); renderPo();
+    n.textContent = `✓ Already in PO — qty increased to ${existing.qty}. Edit the qty in the PO table.`;
+  } else {
+    po.push({ category:state.cat, type:state.type, grade:state.grade, size:item.size, qty:1, unitPrice });
+    savePo(); renderPo();
+    n.textContent = `✓ Added ${item.size} to the Purchase Order — set the quantity in the PO table below.`;
+  }
+  setTimeout(()=>{ if(n.textContent.startsWith('✓')) renderItem(); }, 3000);
 };
 document.getElementById('clearPo').onclick = ()=>{ if(po.length && confirm('Clear all items from this PO?')){ po=[]; savePo(); renderPo(); } };
 document.getElementById('newClient').onclick = ()=>{ document.getElementById('clientForm').style.display=''; document.getElementById('cfName').focus(); };
@@ -844,34 +752,19 @@ function numToWords(n){
   if(n) w+=three(n);
   return w.trim().replace(/\s+/g,' ');
 }
-function vendorFrom(selId){ const sel=document.getElementById(selId); if(!sel.value) return null;
-  return loadClients().find(c=>c.id===sel.value) || {name: sel.options[sel.selectedIndex].text}; }
 function nextPoSeq(){ const s=Number(localStorage.getItem('atf_po_seq')||0)+1; localStorage.setItem('atf_po_seq',s); return s; }
 
 document.getElementById('genPo').onclick = ()=>{
   const hint=document.getElementById('poHint');
   if(!po.length){ hint.textContent='Add at least one item to the PO first.'; return; }
-  const bodyVendor=vendorFrom('bodyClientSel');
-  if(!bodyVendor){ hint.textContent='Select a body vendor first.'; return; }
-  const nutItems=po.filter(it=>it.category==='connector' && (it.nutPart||0)>0);
-  const nutVendor=vendorFrom('nutClientSel');
-  if(nutItems.length && !nutVendor){ hint.textContent='Select a nut vendor (there are connector nuts to order).'; return; }
-
+  const sel=document.getElementById('clientSel');
+  if(!sel.value){ hint.textContent='Select a vendor first.'; return; }
+  const vendor = loadClients().find(c=>c.id===sel.value) || {name: sel.options[sel.selectedIndex].text};
   const now=new Date(), base=document.getElementById('poNo').value.trim();
-  // BODY PO — body metal + body labour
-  const bodyLines=po.map(it=>({ d1:`SS ${it.grade} ${it.type} ${it.category==='connector'?'Connector Body':'Elbow'}`,
-    d2:it.size, qty:it.qty, unitPrice:it.bodyPart||0 }));
-  const bodyNo = base || `ATF/PO/${fyLabel(now)}/${nextPoSeq()}`;
-  makePoDoc(bodyVendor, bodyLines, bodyNo);
-  let msg='✓ Body PO ('+bodyNo+')';
-  // NUT PO — nut metal + nut labour
-  if(nutItems.length){
-    const nutLines=nutItems.map(it=>({ d1:`SS ${it.grade} Nut`, d2:'OD '+(it.nutOd||''), qty:it.qty, unitPrice:it.nutPart||0 }));
-    const nutNo = base ? base+'-N' : `ATF/PO/${fyLabel(now)}/${nextPoSeq()}`;
-    makePoDoc(nutVendor, nutLines, nutNo);
-    msg+=' + Nut PO ('+nutNo+')';
-  }
-  hint.textContent = msg + ' generated.';
+  const lines=po.map(it=>({ d1:`SS ${it.grade} ${it.type} ${prodName(it.category)}`, d2:it.size, qty:it.qty, unitPrice:it.unitPrice||0 }));
+  const poNo = base || `ATF/PO/${fyLabel(now)}/${nextPoSeq()}`;
+  makePoDoc(vendor, lines, poNo);
+  hint.textContent = '✓ PO ('+poNo+') generated.';
 };
 function poLogo(doc, cx, topY, align){
   doc.setFont('helvetica','bold'); doc.setTextColor(...CLR.blue); doc.setFontSize(22);
@@ -1160,7 +1053,8 @@ function enterApp(role, id, data){
   }
   applyRole(role);
   document.getElementById('gate').style.display='none';
-  fillSizes(); renderTable();
+  document.getElementById('prodSel').value = state.cat;
+  fillTypes(); fillSizes(); renderTable();
   armIdle();
 }
 function signOut(msg){
@@ -1199,17 +1093,11 @@ window.onSyncReady = ()=> setSyncBadge('● Live', 'var(--accent2)');
 window.onSyncError = ()=> setSyncBadge('● Offline (local only)', 'var(--warn)');
 window.applySharedState = function(d){
   d = d || {};
-  // body & nut material rates + labour — shared for everyone (with fallback to old single-rate fields)
-  const setIf=(k,v)=>{ if(typeof v==='number' && v!==state[k]){ state[k]=v; localStorage.setItem(k,v); } };
-  setIf('bodyRate304', d.bodyRate304!==undefined? d.bodyRate304 : d.rate304);
-  setIf('bodyRate316', d.bodyRate316!==undefined? d.bodyRate316 : d.rate316);
-  setIf('nutRate304',  d.nutRate304 !==undefined? d.nutRate304  : d.rate304);
-  setIf('nutRate316',  d.nutRate316 !==undefined? d.nutRate316  : d.rate316);
-  setIf('labourBody',  d.labourBody !==undefined? d.labourBody  : d.labour);
-  setIf('labourNut',   d.labourNut);
-  if(typeof syncRateInputs==='function') syncRateInputs();
-  const lbEl=document.getElementById('labourBody'); if(lbEl) lbEl.value=state.labourBody||'';
-  const lnEl=document.getElementById('labourNut'); if(lnEl) lnEl.value=state.labourNut||'';
+  // material rate + labour — shared for everyone (with fallback to old body-rate/body-labour fields)
+  const setIf=(k,v,el)=>{ if(typeof v==='number' && v!==state[k]){ state[k]=v; localStorage.setItem(k,v); const e=document.getElementById(el); if(e) e.value=v||''; } };
+  setIf('rate304', d.rate304!==undefined? d.rate304 : d.bodyRate304, 'rate304');
+  setIf('rate316', d.rate316!==undefined? d.rate316 : d.bodyRate316, 'rate316');
+  setIf('labour',  d.labour !==undefined? d.labour  : d.labourBody, 'labour');
   // saved-rate remarks — stored under encoded keys with original key in `k`
   const sh={}, raw=d.saved||{};
   for(const ek in raw){ const v=raw[ek]; if(v && v.k) sh[v.k]={r304:v.r304, r316:v.r316, date:v.date}; }
