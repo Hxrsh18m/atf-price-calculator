@@ -130,7 +130,7 @@
       <div class="fld">
         <label>Product</label>
         <select id="prodSel">
-          <option value="connector">Connector</option>
+          <option value="connector">Straight</option>
           <option value="elbow">Elbow</option>
           <option value="tubenut">Tube Nut</option>
         </select>
@@ -324,12 +324,20 @@
 <script src="jspdf.umd.min.js"></script>
 <script src="jspdf.autotable.min.js"></script>
 <script>
-// products → the types shown in the Type dropdown for each
+// products → the types shown in the Type dropdown for each.
+// `key` is the data key in state.data[cat]; `label` is what's shown.
 const PRODUCTS = {
-  connector: { label:'Connector', types:['Male','Female','Union'] },
-  elbow:     { label:'Elbow',     types:['Male','Female','Union'] },
-  tubenut:   { label:'Tube Nut',  types:['Standard'] }
+  connector: { label:'Straight', types:[
+    {label:'Male Connector',   key:'Male'},
+    {label:'Female Connector', key:'Female'},
+    {label:'Union',            key:'Union'} ] },
+  elbow:     { label:'Elbow', types:[
+    {label:'Male',   key:'Male'},
+    {label:'Female', key:'Female'},
+    {label:'Union',  key:'Union'} ] },
+  tubenut:   { label:'Tube Nut', types:[ {label:'Standard', key:'Standard'} ] }
 };
+function typeLabel(cat, key){ const t=(PRODUCTS[cat]?.types||[]).find(x=>x.key===key); return t? t.label : key; }
 const state = {
   data:null, cat:'connector', type:'Male', grade:'304',
   rate304: Number(localStorage.getItem('rate304') || localStorage.getItem('bodyRate304') || 0),
@@ -416,8 +424,8 @@ function nutList(){ ensureNuts(); return state.data?.nuts || []; }
 function fillTypes(){
   const sel = document.getElementById('typeSel');
   const types = (PRODUCTS[state.cat] || {types:[]}).types;
-  sel.innerHTML = types.map(t=>`<option value="${t}">${t}</option>`).join('');
-  if(!types.includes(state.type)) state.type = types[0];
+  sel.innerHTML = types.map(t=>`<option value="${t.key}">${t.label}</option>`).join('');
+  if(!types.some(t=>t.key===state.type)) state.type = types[0] && types[0].key;
   sel.value = state.type;
 }
 function fillSizes(){
@@ -446,7 +454,7 @@ function renderItem(){
   if(!item){ document.getElementById('unitPrice').textContent='₹0.00'; document.getElementById('unitEdit').value=''; bd.innerHTML=''; note.textContent=''; return; }
   const p = priceOf(item, state.grade);
   document.getElementById('unitPrice').textContent = rupee(p.total);
-  document.getElementById('unitGrade').textContent = `${prodLabel()} · per piece · SS ${state.grade}`;
+  document.getElementById('unitGrade').textContent = `${prodLabel()} · ${typeLabel(state.cat,state.type)} · per piece · SS ${state.grade}`;
   document.getElementById('unitEdit').value = round2(p.total);   // reset round-off field to the fresh calc
 
   let chips = [`<span class="chip">Metal <b>${rupee(p.metal)}</b></span>`,
@@ -490,7 +498,7 @@ function renderTable(){
   }).join('');
   tb.querySelectorAll('.viewbtn').forEach(btn=> btn.onclick = ()=> openView(filtered[Number(btn.dataset.fi)]));
   const meta = document.getElementById('listMeta');
-  meta.textContent = `${filtered.length} of ${rows.length} sizes · ${prodLabel()} · ${state.type}`
+  meta.textContent = `${filtered.length} of ${rows.length} sizes · ${prodLabel()} · ${typeLabel(state.cat,state.type)}`
     + (incomplete ? `  ·  ⚠ ${incomplete} missing weight` : '');
   meta.style.color = incomplete ? 'var(--warn)' : '';
   document.getElementById('listFormula').innerHTML = state.cat==='elbow'
@@ -506,7 +514,7 @@ function vmRow(label, val){ return `<div class="drow"><span>${label}</span><b>${
 function openView(item){
   if(!item) return;
   document.getElementById('vmTitle').textContent = item.size;
-  document.getElementById('vmSub').textContent = `${prodLabel()} · ${state.type}`;
+  document.getElementById('vmSub').textContent = `${prodLabel()} · ${typeLabel(state.cat,state.type)}`;
   let h = '';
   if(state.cat==='tubenut'){
     h += `<div class="dh">Nut</div>`;
@@ -574,8 +582,8 @@ function openNewItem(){
   document.getElementById('niElbGrp').style.display = hex ? 'none' : '';
   document.getElementById('niHexLeg').textContent = state.cat==='tubenut' ? 'Nut dimensions' : 'Body dimensions';
   document.getElementById('niCtx').textContent = hex
-    ? `${prodLabel()} · ${state.type} · weight = Hex² × 0.0068 kg/m`
-    : `${prodLabel()} · ${state.type} · price = Weight kg × rate + labour + machining`;
+    ? `${prodLabel()} · ${typeLabel(state.cat,state.type)} · weight = Hex² × 0.0068 kg/m`
+    : `${prodLabel()} · ${typeLabel(state.cat,state.type)} · price = Weight kg × rate + labour + machining`;
   document.getElementById('niModal').classList.add('show');
   document.getElementById('niSize').focus();
 }
@@ -681,7 +689,7 @@ function fillClients(selectId){
 }
 function prodName(cat){ return (PRODUCTS[cat]||{label:cat}).label; }
 function itemDesc(it){
-  return `${it.type} ${prodName(it.category)} ${it.grade} · ${it.size}`;
+  return `${prodName(it.category)} · ${typeLabel(it.category,it.type)} · ${it.grade} · ${it.size}`;
 }
 function renderPo(){
   const tb=document.querySelector('#poTbl tbody'); let total=0;
@@ -780,7 +788,7 @@ document.getElementById('genPo').onclick = ()=>{
   if(!sel.value){ hint.textContent='Select a vendor first.'; return; }
   const vendor = loadClients().find(c=>c.id===sel.value) || {name: sel.options[sel.selectedIndex].text};
   const now=new Date(), base=document.getElementById('poNo').value.trim();
-  const lines=po.map(it=>({ d1:`SS ${it.grade} ${it.type} ${prodName(it.category)}`, d2:it.size, qty:it.qty, unitPrice:it.unitPrice||0 }));
+  const lines=po.map(it=>({ d1:`SS ${it.grade} ${prodName(it.category)} ${typeLabel(it.category,it.type)}`, d2:it.size, qty:it.qty, unitPrice:it.unitPrice||0 }));
   const poNo = base || `ATF/PO/${fyLabel(now)}/${nextPoSeq()}`;
   makePoDoc(vendor, lines, poNo);
   hint.textContent = '✓ PO ('+poNo+') generated.';
