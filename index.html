@@ -226,6 +226,7 @@
       <div class="fld"><label>PO #</label><input id="poNo" placeholder="auto"></div>
       <div class="fld"><label>Delivery date</label><input id="poDelivery" type="date"></div>
       <div class="fld" style="flex:0 0 100px"><label>GST %</label><input id="poGst" type="number" min="0" step="0.1" value="18"></div>
+      <div class="fld"><label>HSN (for CRM)</label><input id="poHsn" placeholder="e.g. 73079990"></div>
       <div class="fld"><label>Payment terms</label><input id="poPayment" value="30 Days Credit"></div>
     </div>
     <div class="tblwrap" style="max-height:none">
@@ -242,11 +243,11 @@
       <div class="price" style="font-size:24px;color:#fff" id="poTotal">₹0.00</div>
     </div>
     <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
-      <button class="btn primary" id="genPo">🔗 Create PO in CRM</button>
+      <button class="btn primary" id="genPo">📤 Upload &amp; View</button>
       <button class="btn" id="genPoPdf">📄 Download PDF</button>
       <button class="btn" id="clearPo">Clear PO</button>
     </div>
-    <div class="hint" id="poHint">“Create PO in CRM” opens the CRM new-vendor-PO page; the priced lines above are your reference to fill it. “Download PDF” makes the local PO PDF.</div>
+    <div class="hint" id="poHint">“Upload &amp; View” sends the priced lines to the CRM’s new-PO form (pre-filled). Pick the vendor + confirm HSN there, then Save to create the PO. “Download PDF” makes the local PO PDF.</div>
   </div>
 
   <!-- FULL PRICE LIST -->
@@ -785,10 +786,25 @@ function nextPoSeq(){ const s=Number(localStorage.getItem('atf_po_seq')||0)+1; l
 // The CRM "new vendor PO" page. Change this if the CRM moves to a different host/port.
 const CRM_PO_URL = localStorage.getItem('crm_po_url') || 'http://127.0.0.1:8011/vendor-po/new';
 
-// Primary: hand off to the CRM to raise the actual vendor PO.
+// Primary: push the priced lines into the CRM's new-PO form (pre-filled), then Save there.
 document.getElementById('genPo').onclick = ()=>{
-  window.open(CRM_PO_URL, '_blank', 'noopener');
-  document.getElementById('poHint').textContent = 'Opened the CRM new-PO page — use the priced lines above to fill it. If it asks you to log in, sign in and it will land on the PO form.';
+  const hint=document.getElementById('poHint');
+  if(!po.length){ hint.textContent='Add at least one item to the PO first.'; return; }
+  const sel=document.getElementById('clientSel');
+  const vendorName = sel.value ? (sel.options[sel.selectedIndex].text||'') : '';
+  const hsn = document.getElementById('poHsn').value.trim();
+  const payload = {
+    vendor: vendorName,
+    attention: '',
+    lines: po.map(it=>({
+      d1: `SS ${it.grade} ${prodName(it.category)} ${typeLabel(it.category,it.type)}`,
+      d2: it.size, qty: String(it.qty), unit: 'Nos',
+      price: String(round2(it.unitPrice||0)), hsn
+    }))
+  };
+  const enc = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+  window.open(CRM_PO_URL + '?prefill=' + encodeURIComponent(enc), '_blank', 'noopener');
+  hint.textContent = 'Sent to the CRM — the new-PO form opens pre-filled with these lines. Pick the vendor, confirm HSN, then Save.';
 };
 // Secondary: the local CRM-format PO PDF.
 document.getElementById('genPoPdf').onclick = ()=>{
