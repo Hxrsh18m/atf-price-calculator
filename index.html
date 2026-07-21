@@ -201,7 +201,8 @@
       <span class="muted" id="poCount" style="font-size:12px"></span>
     </div>
     <div class="row" style="margin-bottom:12px;align-items:flex-end">
-      <div class="fld" style="flex:2"><label>Vendor</label><select id="clientSel"></select></div>
+      <div class="fld" style="flex:2"><label>Vendor <span id="vendorBadge" style="font-size:11px;font-weight:normal;text-transform:none;letter-spacing:0"></span></label><select id="clientSel"></select></div>
+      <div class="fld" style="flex:0 0 auto"><button class="btn" id="refreshVendors" title="Reload the vendor list from the CRM">↻</button></div>
       <div class="fld" style="flex:0 0 auto"><button class="btn" id="newClient">＋ New vendor</button></div>
     </div>
     <div id="clientForm" style="display:none;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px">
@@ -686,7 +687,7 @@ function saveClients(list){ localStorage.setItem(CLIENTS_KEY, JSON.stringify(lis
 function fillClients(selectId){
   const sel=document.getElementById('clientSel'); const cur=sel.value;
   sel.innerHTML='<option value="">— select vendor —</option>' +
-    loadClients().map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+    allVendors().map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
   sel.value = selectId || cur || '';
 }
 function prodName(cat){ return (PRODUCTS[cat]||{label:cat}).label; }
@@ -730,7 +731,15 @@ document.getElementById('addToPo').onclick = ()=>{
   setTimeout(()=>{ if(n.textContent.startsWith('✓')) renderItem(); }, 3000);
 };
 document.getElementById('clearPo').onclick = ()=>{ if(po.length && confirm('Clear all items from this PO?')){ po=[]; savePo(); renderPo(); } };
-document.getElementById('newClient').onclick = ()=>{ document.getElementById('clientForm').style.display=''; document.getElementById('cfName').focus(); };
+document.getElementById('newClient').onclick = ()=>{
+  // When the CRM is connected it owns the vendor list — add there, then ↻ to reload.
+  if(window.__crmVendors){
+    window.open(CRM_BASE + '/vendors/new', '_blank', 'noopener');
+    document.getElementById('poHint').textContent = 'Add the vendor in the CRM tab, then click ↻ to reload the list here.';
+    return;
+  }
+  document.getElementById('clientForm').style.display=''; document.getElementById('cfName').focus();
+};
 document.getElementById('cfCancel').onclick = ()=>{ document.getElementById('clientForm').style.display='none'; };
 document.getElementById('cfSave').onclick = ()=>{
   const name=document.getElementById('cfName').value.trim();
@@ -783,8 +792,27 @@ function numToWords(n){
 }
 function nextPoSeq(){ const s=Number(localStorage.getItem('atf_po_seq')||0)+1; localStorage.setItem('atf_po_seq',s); return s; }
 
-// The CRM "new vendor PO" page. Change this if the CRM moves to a different host/port.
-const CRM_PO_URL = localStorage.getItem('crm_po_url') || 'http://127.0.0.1:8011/vendor-po/new';
+// The CRM base URL. Change via the crm_base localStorage key if it moves host/port.
+const CRM_BASE = (localStorage.getItem('crm_base') || 'http://127.0.0.1:8011').replace(/\/+$/,'');
+const CRM_PO_URL = CRM_BASE + '/vendor-po/new';
+
+// ---- live vendor list, shared with the CRM ----
+function setVendorBadge(text, color){ const b=document.getElementById('vendorBadge'); if(b){ b.textContent=text; b.style.color=color; } }
+function allVendors(){ return (window.__crmVendors && window.__crmVendors.length) ? window.__crmVendors : loadClients(); }
+async function loadCrmVendors(){
+  try{
+    const r = await fetch(CRM_BASE + '/vendor-po/vendors.json', {credentials:'include', headers:{'Accept':'application/json'}});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const j = await r.json();
+    window.__crmVendors = (j.vendors||[]).map(v=>({ id:'crm'+v.id, name:v.name, gstin:v.gstin||'', contact:'', phone:v.phone||'', address:v.address||'' }));
+    setVendorBadge(`· ${window.__crmVendors.length} from CRM`, 'var(--accent2)');
+  }catch(e){
+    window.__crmVendors = null;
+    setVendorBadge('· CRM offline (local list)', 'var(--warn)');
+  }
+  fillClients();
+}
+document.getElementById('refreshVendors').onclick = ()=>{ setVendorBadge('· loading…',''); loadCrmVendors(); };
 
 // Primary: push the priced lines into the CRM's new-PO form (pre-filled), then Save there.
 document.getElementById('genPo').onclick = ()=>{
@@ -812,7 +840,7 @@ document.getElementById('genPoPdf').onclick = ()=>{
   if(!po.length){ hint.textContent='Add at least one item to the PO first.'; return; }
   const sel=document.getElementById('clientSel');
   if(!sel.value){ hint.textContent='Select a vendor first.'; return; }
-  const vendor = loadClients().find(c=>c.id===sel.value) || {name: sel.options[sel.selectedIndex].text};
+  const vendor = allVendors().find(c=>c.id===sel.value) || {name: sel.options[sel.selectedIndex].text};
   const now=new Date(), base=document.getElementById('poNo').value.trim();
   const lines=po.map(it=>({ d1:`SS ${it.grade} ${prodName(it.category)} ${typeLabel(it.category,it.type)}`, d2:it.size, qty:it.qty, unitPrice:it.unitPrice||0 }));
   const poNo = base || `ATF/PO/${fyLabel(now)}/${nextPoSeq()}`;
@@ -940,7 +968,7 @@ function makePoDoc(vendor, lines, poNo){
 
   doc.save(poNo.replace(/[\/\\]/g,'-')+'.pdf');
 }
-fillClients(); renderPo();
+fillClients(); renderPo(); loadCrmVendors();   // pull the live vendor list from the CRM (falls back to local)
 // default delivery date = tomorrow
 (function(){ const d=new Date(); d.setDate(d.getDate()+1);
   const el=document.getElementById('poDelivery'); if(el && !el.value) el.value = d.toISOString().slice(0,10); })();
