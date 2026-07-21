@@ -76,9 +76,13 @@
   .uploads{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
   .uploads .btn{cursor:pointer}
   /* new-item modal */
-  #niModal, #viewModal{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1100;display:none;align-items:center;justify-content:center;padding:20px}
-  #niModal.show, #viewModal.show{display:flex}
+  #niModal, #viewModal, #poModal{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1100;display:none;align-items:center;justify-content:center;padding:20px}
+  #niModal.show, #viewModal.show, #poModal.show{display:flex}
   #niModal .card, #viewModal .card{max-width:460px;width:100%;margin:0;max-height:92vh;overflow:auto}
+  #poModalLines th,#poModalLines td{padding:5px 7px}
+  #poModalLines input{padding:6px 7px;font-size:13px}
+  #allPosTbl a{color:var(--accent);text-decoration:none;font-weight:600}
+  #allPosTbl a:hover{text-decoration:underline}
   #niModal fieldset{border:1px solid var(--line);border-radius:10px;padding:12px;margin:12px 0}
   #niModal legend{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.4px;padding:0 6px}
   #niModal .calc{font-size:12px;color:var(--accent2);margin-top:8px;min-height:16px}
@@ -96,7 +100,8 @@
   <div class="card">
     <h2>🔒 Arihant ATF</h2>
     <div class="muted" style="font-size:13px">Purchase Price Calculator</div>
-    <input id="uid" type="text" placeholder="User ID" autocomplete="username" autocapitalize="none" spellcheck="false">
+    <div class="muted" style="font-size:12px;margin:2px 0 10px">Sign in with your CRM account</div>
+    <input id="uid" type="text" placeholder="CRM User ID" autocomplete="username" autocapitalize="none" spellcheck="false">
     <input id="pw" type="password" placeholder="Password" autocomplete="current-password">
     <button class="btn primary" id="unlock">Sign in</button>
     <div id="gateErr" class="note" style="text-align:center"></div>
@@ -146,6 +151,11 @@
           <button data-v="316">316</button>
         </div>
       </div>
+      <div class="fld">
+        <label id="rateLbl">SS 304 rate (₹ / kg)</label>
+        <input class="rateinput" id="rate" type="number" min="0" step="1" placeholder="e.g. 250">
+        <div class="hint">Rate for the selected grade</div>
+      </div>
     </div>
     <div class="row" style="margin-bottom:14px">
       <div class="fld" style="flex:3">
@@ -156,18 +166,6 @@
         <label>Labour (₹ / piece)</label>
         <input class="rateinput" id="labour" type="number" min="0" step="1" placeholder="e.g. 20">
         <div class="hint">Labour charge added to the piece</div>
-      </div>
-    </div>
-    <div class="row" style="margin-bottom:14px">
-      <div class="fld">
-        <label>SS 304 rate (₹ / kg)</label>
-        <input class="rateinput" id="rate304" type="number" min="0" step="1" placeholder="e.g. 250">
-        <div class="hint">Today's raw material rate for 304 grade bar</div>
-      </div>
-      <div class="fld">
-        <label>SS 316 rate (₹ / kg)</label>
-        <input class="rateinput" id="rate316" type="number" min="0" step="1" placeholder="e.g. 550">
-        <div class="hint">Today's raw material rate for 316 grade bar</div>
       </div>
     </div>
 
@@ -194,61 +192,45 @@
     <div class="note" id="itemNote"></div>
   </div>
 
-  <!-- PURCHASE ORDER -->
+  <!-- CART -->
   <div class="card" id="poCard">
     <div class="toolbar" style="justify-content:space-between">
-      <strong style="font-size:15px">🧾 Purchase Order</strong>
+      <strong style="font-size:15px">🛒 Cart <span id="cartCount" class="chip" style="margin-left:6px"></span></strong>
       <span class="muted" id="poCount" style="font-size:12px"></span>
-    </div>
-    <div class="row" style="margin-bottom:12px;align-items:flex-end">
-      <div class="fld" style="flex:2"><label>Vendor <span id="vendorBadge" style="font-size:11px;font-weight:normal;text-transform:none;letter-spacing:0"></span></label><select id="clientSel"></select></div>
-      <div class="fld" style="flex:0 0 auto"><button class="btn" id="refreshVendors" title="Reload the vendor list from the CRM">↻</button></div>
-      <div class="fld" style="flex:0 0 auto"><button class="btn" id="newClient">＋ New vendor</button></div>
-    </div>
-    <div id="clientForm" style="display:none;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px">
-      <div class="row">
-        <div class="fld"><label>Vendor name *</label><input id="cfName"></div>
-        <div class="fld"><label>GSTIN</label><input id="cfGstin"></div>
-      </div>
-      <div class="row" style="margin-top:10px">
-        <div class="fld"><label>Contact person</label><input id="cfContact"></div>
-        <div class="fld"><label>Phone</label><input id="cfPhone"></div>
-      </div>
-      <div class="row" style="margin-top:10px">
-        <div class="fld"><label>Address</label><textarea id="cfAddress" placeholder="Street, area, city…"></textarea></div>
-      </div>
-      <div style="margin-top:12px;display:flex;gap:8px">
-        <button class="btn save" id="cfSave">Save vendor</button>
-        <button class="btn" id="cfCancel">Cancel</button>
-      </div>
-    </div>
-    <!-- PO details -->
-    <div class="row" style="margin-bottom:12px">
-      <div class="fld"><label>PO #</label><input id="poNo" placeholder="auto"></div>
-      <div class="fld"><label>Delivery date</label><input id="poDelivery" type="date"></div>
-      <div class="fld" style="flex:0 0 100px"><label>GST %</label><input id="poGst" type="number" min="0" step="0.1" value="18"></div>
-      <div class="fld"><label>HSN (for CRM)</label><input id="poHsn" placeholder="e.g. 73079990"></div>
-      <div class="fld"><label>Payment terms</label><input id="poPayment" value="30 Days Credit"></div>
     </div>
     <div class="tblwrap" style="max-height:none">
       <table id="poTbl">
         <thead><tr>
-          <th>#</th><th>Description</th><th class="num" style="width:90px">Qty</th>
+          <th style="width:34px"><input type="checkbox" id="cartAll" checked title="Select all" style="width:auto"></th>
+          <th>#</th><th>Description</th><th class="num" style="width:96px">Qty</th>
           <th class="num">Unit ₹</th><th class="num">Amount ₹</th><th></th>
         </tr></thead>
         <tbody></tbody>
       </table>
     </div>
     <div class="result" style="margin-top:12px;justify-content:flex-end;gap:16px">
-      <div class="grade">Grand total:</div>
+      <div class="grade">Selected total:</div>
       <div class="price" style="font-size:24px;color:#fff" id="poTotal">₹0.00</div>
     </div>
     <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
-      <button class="btn primary" id="genPo">📤 Upload &amp; View</button>
-      <button class="btn" id="genPoPdf">📄 Download PDF</button>
-      <button class="btn" id="clearPo">Clear PO</button>
+      <button class="btn primary" id="openPoBtn">Create PO →</button>
+      <button class="btn" id="clearPo">Clear cart</button>
     </div>
-    <div class="hint" id="poHint">“Upload &amp; View” sends the priced lines to the CRM’s new-PO form (pre-filled). Pick the vendor + confirm HSN there, then Save to create the PO. “Download PDF” makes the local PO PDF.</div>
+    <div class="hint" id="poHint">Tick the lines to include, then “Create PO” — fill the PO and submit it straight into the CRM.</div>
+  </div>
+
+  <!-- ALL POs (from the CRM) -->
+  <div class="card">
+    <div class="toolbar" style="justify-content:space-between">
+      <strong style="font-size:15px">📋 All POs <span id="posBadge" class="muted" style="font-size:11px"></span></strong>
+      <button class="btn" id="refreshPos" title="Reload from the CRM">↻ Refresh</button>
+    </div>
+    <div class="tblwrap">
+      <table id="allPosTbl">
+        <thead><tr><th>PO #</th><th>Vendor</th><th>Date</th><th class="num">Grand total</th><th>View / PDF</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
   </div>
 
   <!-- FULL PRICE LIST -->
@@ -303,6 +285,8 @@
       </div>
       <div class="calc" id="niElbCalc"></div>
     </fieldset>
+    <label>Remark <span class="muted" style="text-transform:none;font-weight:normal">(shown on the PO)</span></label>
+    <input id="niRemark" placeholder="e.g. as per drawing / urgent" autocomplete="off">
     <div id="niErr" class="note"></div>
     <div style="display:flex;gap:8px;margin-top:6px">
       <button class="btn save" id="niSave">Save item</button>
@@ -318,6 +302,58 @@
     <div class="muted" style="font-size:12px;margin-bottom:6px" id="vmSub"></div>
     <div id="vmBody"></div>
     <div style="margin-top:16px"><button class="btn" id="vmClose">Close</button></div>
+  </div>
+</div>
+
+<!-- CREATE PO MODAL (fields match the CRM vendor-PO form) -->
+<div id="poModal">
+  <div class="card" style="max-width:880px;width:100%;margin:0;max-height:92vh;overflow:auto">
+    <h3 style="margin:0 0 10px">Create Purchase Order → CRM</h3>
+    <div class="row" style="align-items:flex-end">
+      <div class="fld" style="flex:2"><label>Vendor * <span id="vendorBadge" style="font-size:11px;font-weight:normal;text-transform:none;letter-spacing:0"></span></label><select id="clientSel"></select></div>
+      <div class="fld" style="flex:0 0 auto"><button class="btn" id="refreshVendors" title="Reload vendors from the CRM">↻</button></div>
+      <div class="fld" style="flex:0 0 auto"><button class="btn" id="newClient">＋ New vendor</button></div>
+    </div>
+    <div id="clientForm" style="display:none;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:14px;margin-top:10px">
+      <div class="row">
+        <div class="fld"><label>Vendor name *</label><input id="cfName"></div>
+        <div class="fld"><label>GSTIN</label><input id="cfGstin"></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <div class="fld"><label>Contact person</label><input id="cfContact"></div>
+        <div class="fld"><label>Phone</label><input id="cfPhone"></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <div class="fld"><label>Address</label><textarea id="cfAddress" placeholder="Street, area, city…"></textarea></div>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:8px">
+        <button class="btn save" id="cfSave">Save vendor</button>
+        <button class="btn" id="cfCancel">Cancel</button>
+      </div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div class="fld"><label>PO date</label><input id="poDate" type="date"></div>
+      <div class="fld"><label>Delivery date</label><input id="poDelivery" type="date"></div>
+      <div class="fld"><label>Attention</label><input id="poAttention"></div>
+    </div>
+    <div class="row" style="margin-top:10px;align-items:flex-end">
+      <div class="fld"><label>Payment terms</label><input id="poPayment" value="30 Days Credit"></div>
+      <div class="fld"><label>Default HSN</label><input id="poHsn" placeholder="e.g. 73079990"></div>
+      <div class="fld" style="flex:0 0 auto"><label style="text-transform:none;font-weight:normal"><input type="checkbox" id="poRound" checked style="width:auto;margin-right:6px">Round off</label></div>
+      <div class="fld" style="flex:0 0 auto"><label style="text-transform:none;font-weight:normal"><input type="checkbox" id="poNoGst" style="width:auto;margin-right:6px">Remove GST</label></div>
+    </div>
+    <div style="color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px;margin:14px 0 4px">Line items</div>
+    <div class="tblwrap" style="max-height:280px">
+      <table id="poModalLines">
+        <thead><tr><th>Description</th><th>Spec</th><th>Remark</th><th class="num" style="width:70px">Qty</th><th style="width:60px">Unit</th><th style="width:100px">HSN *</th><th class="num" style="width:84px">Unit ₹</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div id="poErr" class="note"></div>
+    <div style="margin-top:14px;display:flex;gap:8px">
+      <button class="btn primary" id="poSubmit">✅ Submit to CRM</button>
+      <button class="btn" id="poCancel">Cancel</button>
+    </div>
   </div>
 </div>
 
@@ -559,7 +595,7 @@ document.getElementById('prodSel').onchange = e=>{
   fillSizes(); renderTable();
 };
 document.getElementById('typeSel').onchange = e=>{ state.type = e.target.value; state.customItem=null; fillSizes(); renderTable(); };
-segGroup('segGrade', v=>{ state.grade=v; renderItem(); });
+segGroup('segGrade', v=>{ state.grade=v; if(typeof syncRate==='function') syncRate(); renderItem(); });
 
 let niReturnIdx = 0;   // size to fall back to if the user cancels "Add new item…"
 document.getElementById('sizeSel').onchange = ()=>{
@@ -576,7 +612,7 @@ document.getElementById('roundBtn').onclick = ()=>{
 // ---- new custom item — fields depend on the product (transient, never saved) ----
 function niIsHex(){ return state.cat==='connector' || state.cat==='tubenut'; }   // hex+length products
 function openNewItem(){
-  ['niSize','niHex','niLen','niWt','niMach'].forEach(id=>document.getElementById(id).value='');
+  ['niSize','niHex','niLen','niWt','niMach','niRemark'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('niErr').textContent='';
   document.getElementById('niHexCalc').textContent='';
   document.getElementById('niElbCalc').textContent='';
@@ -626,6 +662,7 @@ document.getElementById('niSave').onclick = ()=>{
     const h=Number(document.getElementById('niHex').value)||0, l=Number(document.getElementById('niLen').value)||0;
     item = { size, hex:h||null, weight: h? hexWeight(h): null, length: l||null, ferrule:0, custom:true };
   }
+  item.remark = document.getElementById('niRemark').value.trim();
   state.customItem = item;
   document.getElementById('niModal').classList.remove('show');
   fillSizes();      // shows the ★ custom option and selects it
@@ -651,10 +688,17 @@ document.getElementById('saveRate').onclick = ()=>{
 };
 document.getElementById('search').oninput = renderTable;
 
-const r304 = document.getElementById('rate304'), r316 = document.getElementById('rate316');
-r304.value = state.rate304||''; r316.value = state.rate316||'';
-r304.oninput = ()=>{ state.rate304=Math.max(0,Number(r304.value)||0); localStorage.setItem('rate304',state.rate304); renderAll(); pushRate(); };
-r316.oninput = ()=>{ state.rate316=Math.max(0,Number(r316.value)||0); localStorage.setItem('rate316',state.rate316); renderAll(); pushRate(); };
+// One rate box, tied to the selected grade (saves a row).
+const rateEl = document.getElementById('rate');
+function syncRate(){
+  rateEl.value = (state.grade==='304'? state.rate304 : state.rate316) || '';
+  document.getElementById('rateLbl').textContent = `SS ${state.grade} rate (₹ / kg)`;
+}
+syncRate();
+rateEl.oninput = ()=>{ const v=Math.max(0,Number(rateEl.value)||0);
+  if(state.grade==='304'){ state.rate304=v; localStorage.setItem('rate304',v); }
+  else { state.rate316=v; localStorage.setItem('rate316',v); }
+  renderAll(); pushRate(); };
 
 const labourEl = document.getElementById('labour');
 labourEl.value = state.labour||'';
@@ -695,24 +739,30 @@ function itemDesc(it){
   return `${prodName(it.category)} · ${typeLabel(it.category,it.type)} · ${it.grade} · ${it.size}`;
 }
 function renderPo(){
-  const tb=document.querySelector('#poTbl tbody'); let total=0;
+  const tb=document.querySelector('#poTbl tbody'); let selTotal=0, selCount=0;
   tb.innerHTML = po.length ? po.map((it,i)=>{
-    const amt=(it.unitPrice||0)*(it.qty||1); total+=amt;
+    const amt=(it.unitPrice||0)*(it.qty||1); const on=(it.sel!==false);
+    if(on){ selTotal+=amt; selCount++; }
     return `<tr>
+      <td><input type="checkbox" class="posel" data-i="${i}" ${on?'checked':''} style="width:auto"></td>
       <td>${i+1}</td><td>${itemDesc(it)}</td>
-      <td class="num"><input class="poqty" data-i="${i}" type="number" min="1" step="1" value="${it.qty}" style="width:74px;text-align:right;padding:5px 7px"></td>
+      <td class="num"><input class="poqty" data-i="${i}" type="number" min="1" step="1" value="${it.qty}" style="width:80px;text-align:right;padding:5px 7px"></td>
       <td class="num">${rupee(it.unitPrice||0)}</td>
       <td class="num">${rupee(amt)}</td>
       <td><button class="btn" data-i="${i}" style="padding:2px 9px">✕</button></td>
     </tr>`;
-  }).join('') : `<tr><td colspan="6" class="muted" style="text-align:center;padding:16px">No items yet — configure an item above and click “Add to Purchase Order”.</td></tr>`;
-  document.getElementById('poTotal').textContent = rupee(total);
-  document.getElementById('poCount').textContent = po.length ? `${po.length} line item${po.length>1?'s':''}` : '';
+  }).join('') : `<tr><td colspan="7" class="muted" style="text-align:center;padding:16px">Cart is empty — configure an item above and click “Add to Purchase Order”.</td></tr>`;
+  document.getElementById('poTotal').textContent = rupee(selTotal);
+  document.getElementById('cartCount').textContent = po.length || '';
+  document.getElementById('poCount').textContent = po.length ? `${selCount} of ${po.length} selected` : '';
+  const all=document.getElementById('cartAll'); if(all) all.checked = po.length>0 && po.every(it=>it.sel!==false);
   tb.querySelectorAll('button[data-i]').forEach(b=> b.onclick=()=>{ po.splice(Number(b.dataset.i),1); savePo(); renderPo(); });
-  tb.querySelectorAll('input.poqty').forEach(inp=> inp.onchange=()=>{   // edit qty right here in the PO
+  tb.querySelectorAll('input.posel').forEach(cb=> cb.onchange=()=>{ po[Number(cb.dataset.i)].sel=cb.checked; savePo(); renderPo(); });
+  tb.querySelectorAll('input.poqty').forEach(inp=> inp.onchange=()=>{   // edit qty right in the cart
     const i=Number(inp.dataset.i); po[i].qty=Math.max(1, Math.round(Number(inp.value)||1)); savePo();
-    setTimeout(renderPo, 0); });   // defer so the input's blur finishes before the table re-renders
+    setTimeout(renderPo, 0); });   // defer so the input's blur finishes before the re-render
 }
+document.getElementById('cartAll').onchange = e=>{ po.forEach(it=>it.sel=e.target.checked); savePo(); renderPo(); };
 document.getElementById('addToPo').onclick = ()=>{
   const item = currentItem();
   if(!item) return;
@@ -724,9 +774,9 @@ document.getElementById('addToPo').onclick = ()=>{
     existing.qty += 1; existing.unitPrice = unitPrice; savePo(); renderPo();
     n.textContent = `✓ Already in PO — qty increased to ${existing.qty}. Edit the qty in the PO table.`;
   } else {
-    po.push({ category:state.cat, type:state.type, grade:state.grade, size:item.size, qty:1, unitPrice });
+    po.push({ category:state.cat, type:state.type, grade:state.grade, size:item.size, qty:1, unitPrice, remark:item.remark||'', sel:true });
     savePo(); renderPo();
-    n.textContent = `✓ Added ${item.size} to the Purchase Order — set the quantity in the PO table below.`;
+    n.textContent = `✓ Added ${item.size} to the cart — set the quantity in the cart below.`;
   }
   setTimeout(()=>{ if(n.textContent.startsWith('✓')) renderItem(); }, 3000);
 };
@@ -831,39 +881,104 @@ async function loadCrmVendors(){
 }
 document.getElementById('refreshVendors').onclick = ()=>{ setVendorBadge('· loading…',''); loadCrmVendors(); };
 
-// Primary: push the priced lines into the CRM's new-PO form (pre-filled), then Save there.
-document.getElementById('genPo').onclick = ()=>{
-  const hint=document.getElementById('poHint');
-  if(!po.length){ hint.textContent='Add at least one item to the PO first.'; return; }
-  const sel=document.getElementById('clientSel');
-  const vendorName = sel.value ? (sel.options[sel.selectedIndex].text||'') : '';
-  const hsn = document.getElementById('poHsn').value.trim();
-  const payload = {
-    vendor: vendorName,
-    attention: '',
-    lines: po.map(it=>({
-      d1: `SS ${it.grade} ${prodName(it.category)} ${typeLabel(it.category,it.type)}`,
-      d2: it.size, qty: String(it.qty), unit: 'Nos',
-      price: String(round2(it.unitPrice||0)), hsn
-    }))
-  };
-  const enc = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
-  window.open(CRM_PO_URL + '?prefill=' + encodeURIComponent(enc), '_blank', 'noopener');
-  hint.textContent = 'Sent to the CRM — the new-PO form opens pre-filled with these lines. Pick the vendor, confirm HSN, then Save.';
+const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+const isoDay = d => { const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; };
+
+// ---- Create PO: cart → CRM-matching form → submit into the CRM ----
+document.getElementById('openPoBtn').onclick = ()=>{
+  const sel = po.filter(it=>it.sel!==false);
+  if(!sel.length){ document.getElementById('poHint').textContent='Tick at least one line to create a PO.'; return; }
+  const hsn = (localStorage.getItem('atf_hsn')||'').trim();
+  const tb = document.querySelector('#poModalLines tbody');
+  tb.innerHTML = sel.map(it=>`<tr>
+    <td><input class="pml-d1" value="${esc('SS '+it.grade+' '+prodName(it.category)+' '+typeLabel(it.category,it.type))}"></td>
+    <td><input class="pml-d2" value="${esc(it.size)}"></td>
+    <td><input class="pml-remark" value="${esc(it.remark||'')}" placeholder="optional"></td>
+    <td class="num"><input class="pml-qty" type="number" min="0" step="1" value="${it.qty}" style="text-align:right"></td>
+    <td><input class="pml-unit" value="Nos"></td>
+    <td><input class="pml-hsn" value="${esc(hsn)}"></td>
+    <td class="num"><input class="pml-price" type="number" min="0" step="0.01" value="${round2(it.unitPrice||0)}" style="text-align:right"></td>
+  </tr>`).join('');
+  const today=new Date(), tom=new Date(); tom.setDate(tom.getDate()+1);
+  document.getElementById('poDate').value = isoDay(today);
+  if(!document.getElementById('poDelivery').value) document.getElementById('poDelivery').value = isoDay(tom);
+  if(hsn) document.getElementById('poHsn').value = hsn;
+  document.getElementById('poErr').textContent='';
+  document.getElementById('poModal').classList.add('show');
+  loadCrmVendors();   // refresh vendors + CSRF when the form opens
 };
-// Secondary: the local CRM-format PO PDF.
-document.getElementById('genPoPdf').onclick = ()=>{
-  const hint=document.getElementById('poHint');
-  if(!po.length){ hint.textContent='Add at least one item to the PO first.'; return; }
-  const sel=document.getElementById('clientSel');
-  if(!sel.value){ hint.textContent='Select a vendor first.'; return; }
-  const vendor = allVendors().find(c=>c.id===sel.value) || {name: sel.options[sel.selectedIndex].text};
-  const now=new Date(), base=document.getElementById('poNo').value.trim();
-  const lines=po.map(it=>({ d1:`SS ${it.grade} ${prodName(it.category)} ${typeLabel(it.category,it.type)}`, d2:it.size, qty:it.qty, unitPrice:it.unitPrice||0 }));
-  const poNo = base || `ATF/PO/${fyLabel(now)}/${nextPoSeq()}`;
-  makePoDoc(vendor, lines, poNo);
-  hint.textContent = '✓ PDF ('+poNo+') downloaded.';
+document.getElementById('poCancel').onclick = ()=> document.getElementById('poModal').classList.remove('show');
+document.getElementById('poModal').addEventListener('mousedown', e=>{ if(e.target.id==='poModal') document.getElementById('poModal').classList.remove('show'); });
+// apply the "Default HSN" to every empty line HSN as you type it
+document.getElementById('poHsn').oninput = ()=>{
+  const v=document.getElementById('poHsn').value.trim(); localStorage.setItem('atf_hsn', v);
+  document.querySelectorAll('#poModalLines .pml-hsn').forEach(inp=>{ if(!inp.value.trim()) inp.value=v; });
 };
+
+document.getElementById('poSubmit').onclick = async ()=>{
+  const err=document.getElementById('poErr'), sel=document.getElementById('clientSel');
+  if(!window.__crmVendors){ err.textContent='Not connected to the CRM. Sign in to the CRM in this browser, then press ↻.'; return; }
+  if(!sel.value || !String(sel.value).startsWith('crm')){ err.textContent='Select a CRM vendor.'; return; }
+  const rows=[...document.querySelectorAll('#poModalLines tbody tr')];
+  if(!rows.length){ err.textContent='No line items.'; return; }
+  const body=new URLSearchParams();
+  body.set('csrf_token', window.__crmCsrf||'');
+  body.set('vendor_id', String(sel.value).slice(3));
+  body.set('po_date', document.getElementById('poDate').value||'');
+  body.set('delivery_time', document.getElementById('poDelivery').value||'');
+  body.set('attention', document.getElementById('poAttention').value.trim());
+  body.set('term_payment', document.getElementById('poPayment').value.trim());
+  if(document.getElementById('poRound').checked) body.set('round_off','1');
+  if(document.getElementById('poNoGst').checked) body.set('remove_gst','1');
+  let missingHsn=false;
+  rows.forEach((tr,i)=>{
+    const g=s=>tr.querySelector(s).value.trim();
+    if(!g('.pml-hsn')) missingHsn=true;
+    const rem=g('.pml-remark');
+    body.set('description1_'+i, g('.pml-d1'));
+    body.set('description2_'+i, g('.pml-d2') + (rem ? ' — '+rem : ''));   // remark rides on Description2 so it prints on the PO
+    body.set('quantity_'+i, g('.pml-qty'));
+    body.set('unit_'+i, g('.pml-unit')||'Nos');
+    body.set('hsn_'+i, g('.pml-hsn'));
+    body.set('unit_price_'+i, g('.pml-price'));
+    body.set('line_id_'+i, '');
+  });
+  if(missingHsn){ err.textContent='Every line needs an HSN.'; return; }
+  const btn=document.getElementById('poSubmit'); btn.disabled=true; const old=btn.textContent; btn.textContent='Submitting…';
+  try{
+    const r=await fetch(CRM_BASE+'/vendor-po/create.json', {method:'POST', credentials:'include',
+      headers:{'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json'}, body});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(j.error || ('HTTP '+r.status));
+    po = po.filter(it=>it.sel===false);   // drop the submitted lines from the cart
+    savePo(); renderPo();
+    document.getElementById('poModal').classList.remove('show');
+    toast('✓ PO '+j.number+' created in the CRM');
+    document.getElementById('poHint').textContent='✓ PO '+j.number+' generated in the CRM'+(j.grand_total?(' · '+rupee(j.grand_total)):'')+'.';
+    fetchPos();
+  }catch(e){ err.textContent='Could not create the PO: '+e.message; }
+  finally{ btn.disabled=false; btn.textContent=old; }
+};
+
+// ---- All POs (from the CRM) ----
+async function fetchPos(){
+  const tb=document.querySelector('#allPosTbl tbody'), badge=document.getElementById('posBadge');
+  try{
+    const r=await fetch(CRM_BASE+'/vendor-po/list.json', {credentials:'include', headers:{'Accept':'application/json'}});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const pos=(await r.json()).pos||[];
+    badge.textContent = pos.length+' from CRM'; badge.style.color='var(--accent2)';
+    tb.innerHTML = pos.length ? pos.map(p=>`<tr>
+      <td>${esc(p.number)}</td><td>${esc(p.vendor)}</td><td>${esc(p.date)}</td>
+      <td class="num">${rupee(p.grand_total||0)}</td>
+      <td><a href="${CRM_BASE}/vendor-po/${p.id}" target="_blank" rel="noopener">View</a> · <a href="${CRM_BASE}/vendor-po/${p.id}/pdf" target="_blank" rel="noopener">PDF</a></td>
+    </tr>`).join('') : `<tr><td colspan="5" class="muted" style="text-align:center;padding:14px">No POs yet.</td></tr>`;
+  }catch(e){
+    badge.textContent='CRM offline'; badge.style.color='var(--warn)';
+    tb.innerHTML=`<tr><td colspan="5" class="muted" style="text-align:center;padding:14px">Sign in to the CRM (same browser) to see POs.</td></tr>`;
+  }
+}
+document.getElementById('refreshPos').onclick = fetchPos;
 function poLogo(doc, cx, topY, align){
   doc.setFont('helvetica','bold'); doc.setTextColor(...CLR.blue); doc.setFontSize(22);
   doc.text('ATF', cx, topY, {align});
@@ -985,7 +1100,8 @@ function makePoDoc(vendor, lines, poNo){
 
   doc.save(poNo.replace(/[\/\\]/g,'-')+'.pdf');
 }
-fillClients(); renderPo(); loadCrmVendors();   // pull the live vendor list from the CRM (falls back to local)
+document.getElementById('poHsn').value = localStorage.getItem('atf_hsn')||'';
+fillClients(); renderPo(); loadCrmVendors(); fetchPos();   // vendor list + PO list from the CRM (fallbacks if offline)
 // default delivery date = tomorrow
 (function(){ const d=new Date(); d.setDate(d.getDate()+1);
   const el=document.getElementById('poDelivery'); if(el && !el.value) el.value = d.toISOString().slice(0,10); })();
@@ -1010,15 +1126,22 @@ async function decryptBlob(blob, password, iter){
   const plain = await crypto.subtle.decrypt({name:'AES-GCM', iv:b64ToBytes(blob.iv)}, key, b64ToBytes(blob.ct));
   return JSON.parse(new TextDecoder().decode(plain));
 }
-// Look up the account by User ID, then decrypt with the password. Returns {role,id,data}.
+// Authenticate against the CRM. Only a valid CRM User ID + password opens the
+// calculator; the CRM decides the role (admin = may edit/publish prices) and
+// returns the published price sheet. This also opens a CRM session cookie, so
+// the vendor-list and PO hand-off calls below run as the signed-in CRM user.
+// (The old per-account data.enc decrypt is retired — data now comes from the CRM.)
 async function login(uid, password){
-  const meta = await (await fetch('data.enc?_='+Date.now(), {cache:'no-store'})).json();
-  const iter = meta.iter || 200000;
-  const accounts = meta.accounts || [];
-  const acc = accounts.find(a => String(a.id).toLowerCase() === uid.trim().toLowerCase());
-  if(!acc) throw new Error('no such user');
-  const data = await decryptBlob(acc, password, iter);  // throws on wrong password
-  return { role: acc.role, id: acc.id, data };
+  const body = new URLSearchParams({ username: uid.trim(), password });
+  const r = await fetch(CRM_BASE + '/calc/unlock', {
+    method:'POST', credentials:'include',
+    headers:{ 'Content-Type':'application/x-www-form-urlencoded', 'Accept':'application/json' },
+    body,
+  });
+  let j = null;
+  try{ j = await r.json(); }catch(e){}
+  if(!r.ok || !j || !j.ok) throw new Error((j && j.error) || 'auth failed');
+  return { role: j.role, id: j.id, data: j.data };
 }
 
 // ---- client-side Excel parsing (mirrors server.py) ----
@@ -1154,9 +1277,15 @@ function enterApp(role, id, data){
   document.getElementById('prodSel').value = state.cat;
   fillTypes(); fillSizes(); renderTable();
   armIdle();
+  // now signed into the CRM — pull the shared vendor list and PO list
+  if(typeof loadCrmVendors==='function') loadCrmVendors();
+  if(typeof fetchPos==='function') fetchPos();
 }
 function signOut(msg){
   clearInterval(idleTimer); endSession();
+  // End the CRM session too, so signing out of the calculator signs you out of
+  // the shared login rather than leaving a live cookie behind.
+  try{ fetch(CRM_BASE + '/calc/signout', {method:'POST', credentials:'include'}); }catch(e){}
   document.getElementById('gate').style.display='flex';
   document.getElementById('pw').value='';
   document.getElementById('gateErr').textContent = msg || '';
@@ -1192,10 +1321,11 @@ window.onSyncError = ()=> setSyncBadge('● Offline (local only)', 'var(--warn)'
 window.applySharedState = function(d){
   d = d || {};
   // material rate + labour — shared for everyone (with fallback to old body-rate/body-labour fields)
-  const setIf=(k,v,el)=>{ if(typeof v==='number' && v!==state[k]){ state[k]=v; localStorage.setItem(k,v); const e=document.getElementById(el); if(e) e.value=v||''; } };
-  setIf('rate304', d.rate304!==undefined? d.rate304 : d.bodyRate304, 'rate304');
-  setIf('rate316', d.rate316!==undefined? d.rate316 : d.bodyRate316, 'rate316');
+  const setIf=(k,v,el)=>{ if(typeof v==='number' && v!==state[k]){ state[k]=v; localStorage.setItem(k,v); const e=el&&document.getElementById(el); if(e) e.value=v||''; } };
+  setIf('rate304', d.rate304!==undefined? d.rate304 : d.bodyRate304);
+  setIf('rate316', d.rate316!==undefined? d.rate316 : d.bodyRate316);
   setIf('labour',  d.labour !==undefined? d.labour  : d.labourBody, 'labour');
+  if(typeof syncRate==='function') syncRate();   // refresh the single rate box for the current grade
   // saved-rate remarks — stored under encoded keys with original key in `k`
   const sh={}, raw=d.saved||{};
   for(const ek in raw){ const v=raw[ek]; if(v && v.k) sh[v.k]={r304:v.r304, r316:v.r316, date:v.date}; }
@@ -1204,11 +1334,24 @@ window.applySharedState = function(d){
   if(state.data) renderAll();
 };
 
-// restore an active session on load (refresh no longer logs you out)
-(function boot(){
+// restore an active session on load (refresh no longer logs you out), and fall
+// back to CRM single sign-on: if you're already logged into the CRM, walk in.
+(async function boot(){
   const s = readSession();
-  if(s && Date.now() < s.exp && s.data){ enterApp(s.role, s.id, s.data); touchSession(); }
-  else { endSession(); document.getElementById('uid').focus(); }
+  if(s && Date.now() < s.exp && s.data){ enterApp(s.role, s.id, s.data); touchSession(); return; }
+  endSession();
+  try{
+    const r = await fetch(CRM_BASE + '/calc/me', {credentials:'include', headers:{'Accept':'application/json'}});
+    if(r.ok){
+      const j = await r.json();
+      if(j && j.ok){
+        writeSession({ role:j.role, id:j.id, exp:Date.now()+IDLE_MS, data:j.data });
+        enterApp(j.role, j.id, j.data);
+        return;
+      }
+    }
+  }catch(e){ /* CRM unreachable — fall through to the sign-in gate */ }
+  document.getElementById('uid').focus();
 })();
 
 // If Firebase never connects (blocked/offline), stop showing "connecting…"
