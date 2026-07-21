@@ -731,28 +731,44 @@ document.getElementById('addToPo').onclick = ()=>{
   setTimeout(()=>{ if(n.textContent.startsWith('✓')) renderItem(); }, 3000);
 };
 document.getElementById('clearPo').onclick = ()=>{ if(po.length && confirm('Clear all items from this PO?')){ po=[]; savePo(); renderPo(); } };
-document.getElementById('newClient').onclick = ()=>{
-  // When the CRM is connected it owns the vendor list — add there, then ↻ to reload.
-  if(window.__crmVendors){
-    window.open(CRM_BASE + '/vendors/new', '_blank', 'noopener');
-    document.getElementById('poHint').textContent = 'Add the vendor in the CRM tab, then click ↻ to reload the list here.';
-    return;
-  }
-  document.getElementById('clientForm').style.display=''; document.getElementById('cfName').focus();
-};
+document.getElementById('newClient').onclick = ()=>{ document.getElementById('clientForm').style.display=''; document.getElementById('cfName').focus(); };
 document.getElementById('cfCancel').onclick = ()=>{ document.getElementById('clientForm').style.display='none'; };
-document.getElementById('cfSave').onclick = ()=>{
+function niCloseVendorForm(){
+  document.getElementById('clientForm').style.display='none';
+  ['cfName','cfGstin','cfContact','cfPhone','cfAddress'].forEach(x=>document.getElementById(x).value='');
+}
+document.getElementById('cfSave').onclick = async ()=>{
   const name=document.getElementById('cfName').value.trim();
   if(!name){ document.getElementById('cfName').focus(); return; }
-  const list=loadClients().filter(c=>!String(c.id).startsWith('SAMPLE-'));   // drop samples once real vendors exist
-  const c={ id:'C'+Date.now(), name,
-    gstin:document.getElementById('cfGstin').value.trim(),
+  const fields={ gstin:document.getElementById('cfGstin').value.trim(),
     contact:document.getElementById('cfContact').value.trim(),
     phone:document.getElementById('cfPhone').value.trim(),
     address:document.getElementById('cfAddress').value.trim() };
-  list.push(c); saveClients(list); fillClients(c.id);
-  document.getElementById('clientForm').style.display='none';
-  ['cfName','cfGstin','cfContact','cfPhone','cfAddress'].forEach(x=>document.getElementById(x).value='');
+  const btn=document.getElementById('cfSave'), hint=document.getElementById('poHint');
+  // CRM connected → save the vendor INTO the CRM so it's stored for future orders
+  if(window.__crmVendors){
+    btn.disabled=true; const old=btn.textContent; btn.textContent='Saving to CRM…';
+    try{
+      const body=new URLSearchParams({ csrf_token:window.__crmCsrf||'', vendor_name:name,
+        gstin:fields.gstin, phone:fields.phone, address:fields.address, attention_name:fields.contact });
+      const r=await fetch(CRM_BASE+'/vendors/quick', {method:'POST', credentials:'include',
+        headers:{'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json'}, body});
+      if(!r.ok){ const t=await r.text().catch(()=> ''); throw new Error('HTTP '+r.status+(t?(' · '+t.replace(/<[^>]+>/g,'').trim().slice(0,140)):'')); }
+      const v=await r.json();
+      await loadCrmVendors();                         // reload the shared list
+      document.getElementById('clientSel').value='crm'+v.id;
+      niCloseVendorForm();
+      hint.textContent='✓ Vendor "'+v.name+'" saved to the CRM.';
+    }catch(e){
+      hint.textContent='Could not save to the CRM: '+e.message+'. Make sure the CRM tab is signed in, then retry.';
+    }finally{ btn.disabled=false; btn.textContent=old; }
+    return;
+  }
+  // CRM offline → keep it locally so the calculator still works standalone
+  const list=loadClients().filter(c=>!String(c.id).startsWith('SAMPLE-'));
+  list.push({ id:'C'+Date.now(), name, ...fields }); saveClients(list); fillClients('');
+  niCloseVendorForm();
+  hint.textContent='Saved locally (CRM offline) — it will not sync until the CRM is reachable.';
 };
 
 // ---- PO document constants (edit here to change company / signatory / terms) ----
@@ -805,6 +821,7 @@ async function loadCrmVendors(){
     if(!r.ok) throw new Error('HTTP '+r.status);
     const j = await r.json();
     window.__crmVendors = (j.vendors||[]).map(v=>({ id:'crm'+v.id, name:v.name, gstin:v.gstin||'', contact:'', phone:v.phone||'', address:v.address||'' }));
+    window.__crmCsrf = j.csrf || '';
     setVendorBadge(`· ${window.__crmVendors.length} from CRM`, 'var(--accent2)');
   }catch(e){
     window.__crmVendors = null;
