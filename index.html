@@ -242,10 +242,11 @@
       <div class="price" style="font-size:24px;color:#fff" id="poTotal">₹0.00</div>
     </div>
     <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
-      <button class="btn primary" id="genPo">📄 Generate PO (PDF)</button>
+      <button class="btn primary" id="genPo">🔗 Create PO in CRM</button>
+      <button class="btn" id="genPoPdf">📄 Download PDF</button>
       <button class="btn" id="clearPo">Clear PO</button>
     </div>
-    <div class="hint" id="poHint">Set the quantity for each line in the table above. Generate makes a PO PDF in the CRM format — leave PO # blank for an auto number.</div>
+    <div class="hint" id="poHint">“Create PO in CRM” opens the CRM new-vendor-PO page; the priced lines above are your reference to fill it. “Download PDF” makes the local PO PDF.</div>
   </div>
 
   <!-- FULL PRICE LIST -->
@@ -781,7 +782,16 @@ function numToWords(n){
 }
 function nextPoSeq(){ const s=Number(localStorage.getItem('atf_po_seq')||0)+1; localStorage.setItem('atf_po_seq',s); return s; }
 
+// The CRM "new vendor PO" page. Change this if the CRM moves to a different host/port.
+const CRM_PO_URL = localStorage.getItem('crm_po_url') || 'http://127.0.0.1:8011/vendor-po/new';
+
+// Primary: hand off to the CRM to raise the actual vendor PO.
 document.getElementById('genPo').onclick = ()=>{
+  window.open(CRM_PO_URL, '_blank', 'noopener');
+  document.getElementById('poHint').textContent = 'Opened the CRM new-PO page — use the priced lines above to fill it. If it asks you to log in, sign in and it will land on the PO form.';
+};
+// Secondary: the local CRM-format PO PDF.
+document.getElementById('genPoPdf').onclick = ()=>{
   const hint=document.getElementById('poHint');
   if(!po.length){ hint.textContent='Add at least one item to the PO first.'; return; }
   const sel=document.getElementById('clientSel');
@@ -791,7 +801,7 @@ document.getElementById('genPo').onclick = ()=>{
   const lines=po.map(it=>({ d1:`SS ${it.grade} ${prodName(it.category)} ${typeLabel(it.category,it.type)}`, d2:it.size, qty:it.qty, unitPrice:it.unitPrice||0 }));
   const poNo = base || `ATF/PO/${fyLabel(now)}/${nextPoSeq()}`;
   makePoDoc(vendor, lines, poNo);
-  hint.textContent = '✓ PO ('+poNo+') generated.';
+  hint.textContent = '✓ PDF ('+poNo+') downloaded.';
 };
 function poLogo(doc, cx, topY, align){
   doc.setFont('helvetica','bold'); doc.setTextColor(...CLR.blue); doc.setFontSize(22);
