@@ -102,7 +102,10 @@
     <div class="muted" style="font-size:13px">Purchase Price Calculator</div>
     <div class="muted" style="font-size:12px;margin:2px 0 10px">Sign in with your CRM account</div>
     <input id="uid" type="text" placeholder="CRM User ID" autocomplete="username" autocapitalize="none" spellcheck="false">
-    <input id="pw" type="password" placeholder="Password" autocomplete="current-password">
+    <div style="position:relative;margin:0 0 12px">
+      <input id="pw" type="password" placeholder="Password" autocomplete="current-password" style="margin:0;padding-right:62px">
+      <button type="button" id="pwToggle" style="position:absolute;right:6px;top:0;bottom:0;background:none;border:0;color:var(--muted);cursor:pointer;font-size:12px;padding:0 10px">Show</button>
+    </div>
     <button class="btn primary" id="unlock">Sign in</button>
     <div id="gateErr" class="note" style="text-align:center"></div>
     <div class="muted" style="font-size:11px;margin-top:12px">Session ends after 5 minutes of inactivity.</div>
@@ -801,8 +804,8 @@ document.getElementById('cfSave').onclick = async ()=>{
     try{
       const body=new URLSearchParams({ csrf_token:window.__crmCsrf||'', vendor_name:name,
         gstin:fields.gstin, phone:fields.phone, address:fields.address, attention_name:fields.contact });
-      const r=await fetch(CRM_BASE+'/vendors/quick', {method:'POST', credentials:'include',
-        headers:{'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json'}, body});
+      const r=await crmFetch(CRM_BASE+'/vendors/quick', {method:'POST',
+        headers:{'Content-Type':'application/x-www-form-urlencoded'}, body});
       if(!r.ok){ const t=await r.text().catch(()=> ''); throw new Error('HTTP '+r.status+(t?(' · '+t.replace(/<[^>]+>/g,'').trim().slice(0,140)):'')); }
       const v=await r.json();
       await loadCrmVendors();                         // reload the shared list
@@ -862,12 +865,25 @@ function nextPoSeq(){ const s=Number(localStorage.getItem('atf_po_seq')||0)+1; l
 const CRM_BASE = (localStorage.getItem('crm_base') || 'http://127.0.0.1:8011').replace(/\/+$/,'');
 const CRM_PO_URL = CRM_BASE + '/vendor-po/new';
 
+// The calculator authenticates with its OWN bearer token (from /calc/unlock),
+// independent of the CRM's browser-session cookie — so the CRM tab and the
+// calculator can be different users at once. Every CRM call carries the token
+// and does NOT send the cookie (no credentials), keeping the two identities apart.
+function crmToken(){ return localStorage.getItem('calc_token') || ''; }
+function crmFetch(url, opts){
+  opts = Object.assign({}, opts);
+  const h = Object.assign({'Accept':'application/json'}, opts.headers);
+  const t = crmToken(); if(t) h['Authorization'] = 'Bearer '+t;
+  opts.headers = h;
+  return fetch(url, opts);   // no credentials -> uses the token, not the CRM cookie
+}
+
 // ---- live vendor list, shared with the CRM ----
 function setVendorBadge(text, color){ const b=document.getElementById('vendorBadge'); if(b){ b.textContent=text; b.style.color=color; } }
 function allVendors(){ return (window.__crmVendors && window.__crmVendors.length) ? window.__crmVendors : loadClients(); }
 async function loadCrmVendors(){
   try{
-    const r = await fetch(CRM_BASE + '/vendor-po/vendors.json', {credentials:'include', headers:{'Accept':'application/json'}});
+    const r = await crmFetch(CRM_BASE + '/vendor-po/vendors.json');
     if(!r.ok) throw new Error('HTTP '+r.status);
     const j = await r.json();
     window.__crmVendors = (j.vendors||[]).map(v=>({ id:'crm'+v.id, name:v.name, gstin:v.gstin||'', contact:'', phone:v.phone||'', address:v.address||'' }));
@@ -946,8 +962,8 @@ document.getElementById('poSubmit').onclick = async ()=>{
   if(missingHsn){ err.textContent='Every line needs an HSN.'; return; }
   const btn=document.getElementById('poSubmit'); btn.disabled=true; const old=btn.textContent; btn.textContent='Submitting…';
   try{
-    const r=await fetch(CRM_BASE+'/vendor-po/create.json', {method:'POST', credentials:'include',
-      headers:{'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json'}, body});
+    const r=await crmFetch(CRM_BASE+'/vendor-po/create.json', {method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'}, body});
     const j=await r.json().catch(()=>({}));
     if(!r.ok) throw new Error(j.error || ('HTTP '+r.status));
     po = po.filter(it=>it.sel===false);   // drop the submitted lines from the cart
@@ -964,21 +980,32 @@ document.getElementById('poSubmit').onclick = async ()=>{
 async function fetchPos(){
   const tb=document.querySelector('#allPosTbl tbody'), badge=document.getElementById('posBadge');
   try{
-    const r=await fetch(CRM_BASE+'/vendor-po/list.json', {credentials:'include', headers:{'Accept':'application/json'}});
+    const r=await crmFetch(CRM_BASE+'/vendor-po/list.json');
     if(!r.ok) throw new Error('HTTP '+r.status);
     const pos=(await r.json()).pos||[];
     badge.textContent = pos.length+' from CRM'; badge.style.color='var(--accent2)';
     tb.innerHTML = pos.length ? pos.map(p=>`<tr>
       <td>${esc(p.number)}</td><td>${esc(p.vendor)}</td><td>${esc(p.date)}</td>
       <td class="num">${rupee(p.grand_total||0)}</td>
-      <td><a href="${CRM_BASE}/vendor-po/${p.id}" target="_blank" rel="noopener">View</a> · <a href="${CRM_BASE}/vendor-po/${p.id}/pdf" target="_blank" rel="noopener">PDF</a></td>
+      <td><a href="#" class="po-pdf" data-id="${p.id}">PDF</a></td>
     </tr>`).join('') : `<tr><td colspan="5" class="muted" style="text-align:center;padding:14px">No POs yet.</td></tr>`;
+    tb.querySelectorAll('a.po-pdf').forEach(a=> a.onclick=e=>{ e.preventDefault(); openPoPdf(a.dataset.id); });
   }catch(e){
     badge.textContent='CRM offline'; badge.style.color='var(--warn)';
     tb.innerHTML=`<tr><td colspan="5" class="muted" style="text-align:center;padding:14px">Sign in to the CRM (same browser) to see POs.</td></tr>`;
   }
 }
 document.getElementById('refreshPos').onclick = fetchPos;
+// open a PO's PDF using the calculator's token (works without a CRM cookie)
+async function openPoPdf(id){
+  try{
+    const r = await crmFetch(CRM_BASE+'/vendor-po/'+id+'/pdf', {headers:{'Accept':'application/pdf'}});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const url = URL.createObjectURL(await r.blob());
+    window.open(url, '_blank');
+    setTimeout(()=>URL.revokeObjectURL(url), 60000);
+  }catch(e){ toast('Could not open PDF: '+e.message); }
+}
 function poLogo(doc, cx, topY, align){
   doc.setFont('helvetica','bold'); doc.setTextColor(...CLR.blue); doc.setFontSize(22);
   doc.text('ATF', cx, topY, {align});
@@ -1134,13 +1161,14 @@ async function decryptBlob(blob, password, iter){
 async function login(uid, password){
   const body = new URLSearchParams({ username: uid.trim(), password });
   const r = await fetch(CRM_BASE + '/calc/unlock', {
-    method:'POST', credentials:'include',
+    method:'POST',   // no credentials — we want a token, not the shared CRM cookie
     headers:{ 'Content-Type':'application/x-www-form-urlencoded', 'Accept':'application/json' },
     body,
   });
   let j = null;
   try{ j = await r.json(); }catch(e){}
   if(!r.ok || !j || !j.ok) throw new Error((j && j.error) || 'auth failed');
+  if(j.token) localStorage.setItem('calc_token', j.token);   // the calculator's own login
   return { role: j.role, id: j.id, data: j.data };
 }
 
@@ -1219,10 +1247,16 @@ document.getElementById('resetData').onclick = ()=>{
 };
 
 // ---- password gate ----
-function applyRole(role){
+function applyRole(role, who){
+  // `admin` here means "may edit prices" (CRM admin, or a user granted the
+  // Calculator EditPrices permission) — shown as "Editor", not "Admin", since a
+  // granted non-admin CRM user is not a system admin. The badge names the
+  // signed-in user so it is clear whose account is in use.
   const admin = role==='admin';
   document.getElementById('adminTools').style.display = admin ? 'flex' : 'none';
-  document.getElementById('roleBadge').textContent = admin ? 'Signed in · Admin' : 'Signed in · Viewer';
+  const roleLabel = admin ? 'Editor' : 'Viewer';
+  document.getElementById('roleBadge').textContent =
+    'Signed in · ' + (who ? who + ' · ' : '') + roleLabel;
 }
 // ---- session with 5-minute idle timeout (survives page refresh) ----
 const SESSION_KEY = 'atf_session';
@@ -1272,7 +1306,7 @@ function enterApp(role, id, data){
   } else {
     state.data = JSON.parse(JSON.stringify(data));
   }
-  applyRole(role);
+  applyRole(role, id);
   document.getElementById('gate').style.display='none';
   document.getElementById('prodSel').value = state.cat;
   fillTypes(); fillSizes(); renderTable();
@@ -1283,9 +1317,7 @@ function enterApp(role, id, data){
 }
 function signOut(msg){
   clearInterval(idleTimer); endSession();
-  // End the CRM session too, so signing out of the calculator signs you out of
-  // the shared login rather than leaving a live cookie behind.
-  try{ fetch(CRM_BASE + '/calc/signout', {method:'POST', credentials:'include'}); }catch(e){}
+  localStorage.removeItem('calc_token');   // drop the calculator's own token (the CRM tab is untouched)
   document.getElementById('gate').style.display='flex';
   document.getElementById('pw').value='';
   document.getElementById('gateErr').textContent = msg || '';
@@ -1306,6 +1338,13 @@ async function doLogin(){
   }
 }
 document.getElementById('unlock').onclick = doLogin;
+document.getElementById('pwToggle').onclick = ()=>{
+  const pw=document.getElementById('pw'), t=document.getElementById('pwToggle');
+  const show = pw.type==='password';
+  pw.type = show ? 'text' : 'password';
+  t.textContent = show ? 'Hide' : 'Show';
+  pw.focus();
+};
 document.getElementById('uid').addEventListener('keydown', e=>{ if(e.key==='Enter') document.getElementById('pw').focus(); });
 document.getElementById('pw').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
 document.getElementById('signout').onclick = ()=> signOut('');
@@ -1334,23 +1373,28 @@ window.applySharedState = function(d){
   if(state.data) renderAll();
 };
 
-// restore an active session on load (refresh no longer logs you out), and fall
-// back to CRM single sign-on: if you're already logged into the CRM, walk in.
+// Restore an active session on load (refresh no longer logs you out). If the
+// calculator has its OWN saved token, validate it and walk in — this is the
+// calculator's independent login, NOT the CRM's cookie, so it does not inherit
+// whoever the CRM tab is signed in as.
 (async function boot(){
   const s = readSession();
   if(s && Date.now() < s.exp && s.data){ enterApp(s.role, s.id, s.data); touchSession(); return; }
   endSession();
-  try{
-    const r = await fetch(CRM_BASE + '/calc/me', {credentials:'include', headers:{'Accept':'application/json'}});
-    if(r.ok){
-      const j = await r.json();
-      if(j && j.ok){
-        writeSession({ role:j.role, id:j.id, exp:Date.now()+IDLE_MS, data:j.data });
-        enterApp(j.role, j.id, j.data);
-        return;
+  if(crmToken()){
+    try{
+      const r = await crmFetch(CRM_BASE + '/calc/me');
+      if(r.ok){
+        const j = await r.json();
+        if(j && j.ok){
+          writeSession({ role:j.role, id:j.id, exp:Date.now()+IDLE_MS, data:j.data });
+          enterApp(j.role, j.id, j.data);
+          return;
+        }
       }
-    }
-  }catch(e){ /* CRM unreachable — fall through to the sign-in gate */ }
+    }catch(e){ /* CRM unreachable */ }
+    localStorage.removeItem('calc_token');   // stale/invalid token — require a fresh sign-in
+  }
   document.getElementById('uid').focus();
 })();
 
