@@ -862,7 +862,12 @@ function numToWords(n){
 function nextPoSeq(){ const s=Number(localStorage.getItem('atf_po_seq')||0)+1; localStorage.setItem('atf_po_seq',s); return s; }
 
 // The CRM base URL. Change via the crm_base localStorage key if it moves host/port.
-const CRM_BASE = (localStorage.getItem('crm_base') || 'http://127.0.0.1:8011').replace(/\/+$/,'');
+const CRM_BASE = (
+  localStorage.getItem('crm_base')                                  // manual override wins
+  || (location.hostname.endsWith('arihantatf.com')                  // deployed: calc.arihantatf.com → the CRM
+        ? 'https://crm2.arihantatf.com'
+        : 'http://127.0.0.1:8011')                                  // local dev: CRM on this machine
+).replace(/\/+$/,'');
 const CRM_PO_URL = CRM_BASE + '/vendor-po/new';
 
 // The calculator authenticates with its OWN bearer token (from /calc/unlock),
