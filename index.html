@@ -101,9 +101,10 @@
   .uploads{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
   .uploads .btn{cursor:pointer}
   /* new-item modal */
-  #niModal, #viewModal, #poModal{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1100;display:none;align-items:center;justify-content:center;padding:20px}
-  #niModal.show, #viewModal.show, #poModal.show{display:flex}
-  #niModal .card, #viewModal .card{max-width:460px;width:100%;margin:0;max-height:92vh;overflow:auto}
+  #niModal, #viewModal, #poModal, #mapModal{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1100;display:none;align-items:center;justify-content:center;padding:20px}
+  #niModal.show, #viewModal.show, #poModal.show, #mapModal.show{display:flex}
+  #niModal .card, #viewModal .card, #mapModal .card{max-width:460px;width:100%;margin:0;max-height:92vh;overflow:auto}
+  #mapRows select{width:100%}
   #poModalLines th,#poModalLines td{padding:5px 7px}
   #poModalLines input{padding:6px 7px;font-size:13px}
   #allPosTbl a{color:var(--accent);text-decoration:none;font-weight:600}
@@ -427,6 +428,20 @@
     <div class="muted" style="font-size:12px;margin-bottom:6px" id="vmSub"></div>
     <div id="vmBody"></div>
     <div style="margin-top:16px"><button class="btn" id="vmClose">Close</button></div>
+  </div>
+</div>
+
+<!-- COLUMN-MAP MODAL — shown only when a file's columns can't be auto-detected -->
+<div id="mapModal">
+  <div class="card">
+    <h3 style="margin:0 0 4px">Match the columns</h3>
+    <div class="muted" style="font-size:13px;margin-bottom:12px" id="mapSub"></div>
+    <div id="mapRows"></div>
+    <div class="calc" id="mapErr" style="color:var(--warn);min-height:16px;font-size:12px"></div>
+    <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" id="mapCancel">Cancel</button>
+      <button class="btn primary" id="mapImport">Import</button>
+    </div>
   </div>
 </div>
 
@@ -1411,24 +1426,78 @@ function parsePlugs(wb){
   }
   return { Male: res };
 }
-// Generic body product: read every sheet's rows (Size, Hex, Weight, Length, …,
-// Labour@col 6) into one flat "Standard" list. Works for any future product file
-// that follows the same column layout, whatever its sheet is called.
-function parseGenericProduct(wb){
+// ---- generic body products: columns matched by HEADER NAME, not position ----
+// A supplier's sheet may reorder columns or add extra ones, so we never rely on
+// a fixed order. normHead squashes a header to letters+digits ("A/F"->"af",
+// "Weight (kg/m)"->"weightkgm") so aliases match.
+function normHead(h){ return String(h==null?'':h).toLowerCase().replace(/[^a-z0-9]/g,''); }
+function colLetter(i){ let s=''; i++; while(i>0){ const m=(i-1)%26; s=String.fromCharCode(65+m)+s; i=Math.floor((i-1)/26); } return s; }
+// Guess which column is which. Returns {size,hex,weight,length,labour} as 0-based
+// indices, or -1 when not found. Each column is claimed by at most one field.
+function autoMapColumns(headers){
+  const N = (headers||[]).map(normHead); const used = new Set();
+  const pick = test => { for(let i=0;i<N.length;i++){ if(used.has(i)) continue; if(test(N[i])){ used.add(i); return i; } } return -1; };
+  const size   = pick(h=> h.includes('size')||h.includes('item')||h.startsWith('desc')||h.includes('product'));
+  const hex    = pick(h=> h.includes('hex')||h==='af'||h.includes('acrossflat')||h.includes('spanner'));
+  const weight = pick(h=> !h.includes('rate') && (h.includes('weight')||h==='wt'||h.includes('kgm')||h.includes('kgperm')));
+  const length = pick(h=> h.includes('length')||h==='len'||h.includes('lengthmm'));
+  const labour = pick(h=> h.includes('labour')||h.includes('labor')||h.includes('making')||h.includes('wages'));
+  return {size,hex,weight,length,labour};
+}
+function mapConfident(m){ return m.size>=0 && (m.weight>=0 || m.hex>=0) && m.length>=0; }
+// Read every sheet's rows into one flat "Standard" list using the column map.
+function parseByMap(wb, map){
+  const cell=(r,idx)=> idx>=0 ? r[idx] : null;
   const res=[];
   for(const name of wb.SheetNames){
     const ws=wb.Sheets[name]; if(!ws) continue;
     const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
     for(let i=1;i<rows.length;i++){ const r=rows[i]; if(!r) continue;
-      const size=r[0]; if(size===null||String(size).trim()==='') continue;
-      if(String(size).trim().toLowerCase()==='size') continue;   // a header row on a later sheet
-      const hexv=num(r[1]); let weight=num(r[2]);
+      const sz=cell(r,map.size); if(sz===null||sz===undefined||String(sz).trim()==='') continue;
+      if(String(sz).trim().toLowerCase()==='size') continue;   // a repeated header row
+      const hexv=num(cell(r,map.hex)); let weight=num(cell(r,map.weight));
       if(weight===null && hexv!==null) weight=hexWeight(hexv);
-      res.push({size:String(size).trim(),hex:hexv,weight,length:num(r[3]),labour:num(r[6])||0,ferrule:0});
+      res.push({size:String(sz).trim(),hex:hexv,weight,length:num(cell(r,map.length)),labour:num(cell(r,map.labour))||0,ferrule:0});
     }
   }
   return { Standard: res };
 }
+// Create/update a user-added product from a parsed workbook + column map, then
+// show it. Shared by the auto path and the mapping popup's Import button.
+function addGenericProduct(wb, map, fileName){
+  const parsed = parseByMap(wb, map);
+  if(!parsed.Standard.length){ toast('No priced rows found in '+fileName); return; }
+  const label = productLabelFromFile(fileName);
+  const key   = productKeyFromLabel(label);
+  state.data[key] = parsed;
+  state.data.__products = state.data.__products || {};
+  const isNew = !state.data.__products[key];
+  state.data.__products[key] = label;
+  persistData();
+  state.cat = key; state.customItem = null;
+  fillProducts(); document.getElementById('prodSel').value = key;
+  fillTypes(); fillSizes(); renderTable(); updateRemoveProd();
+  toast('Updated '+label+(isNew?' (new product)':'')+' from '+fileName);
+}
+// The mapping popup, shown only when auto-detect can't place a required column.
+let _pendingUpload = null;   // {wb, fileName} awaiting a manual column map
+function openColumnMap(wb, headers, guess, fileName){
+  _pendingUpload = { wb, fileName };
+  document.getElementById('mapSub').textContent =
+    fileName + " — I couldn't recognise every column. Pick which column holds each value. Size, plus Weight or Hex, and Length are needed for a price.";
+  const cols = (headers||[]).map((h,i)=> colLetter(i)+' — '+String(h==null||h===''?'(blank)':h));
+  const FIELDS=[['size','Size (name shown)'],['hex','Hex A/F'],['weight','Weight (kg/m)'],['length','Length (mm)'],['labour','Labour (₹)']];
+  document.getElementById('mapRows').innerHTML = FIELDS.map(([k,lbl])=>{
+    const opts = '<option value="-1">— none —</option>' +
+      cols.map((c,i)=>`<option value="${i}"${guess[k]===i?' selected':''}>${c}</option>`).join('');
+    return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+      <div style="flex:0 0 130px;font-size:13px">${lbl}</div>
+      <div class="fld" style="margin:0;flex:1"><select id="map_${k}">${opts}</select></div></div>`;
+  }).join('');
+  document.getElementById('mapErr').textContent='';
+  document.getElementById('mapModal').classList.add('show');
+}
+function closeColumnMap(){ document.getElementById('mapModal').classList.remove('show'); _pendingUpload=null; }
 // "Reducer 2.xlsx" -> label "Reducer 2", key "reducer_2"
 function productLabelFromFile(name){ return String(name||'product').replace(/\.[^.]+$/,'').replace(/[_-]+/g,' ').trim() || 'Product'; }
 function productKeyFromLabel(label){ return 'p_' + label.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,''); }
@@ -1456,20 +1525,15 @@ async function handleUpload(file){
     if(wantConn){  state.data.connector = parseConnectors(wb); state.data.nuts = null; ensureNuts(); updated.push('Straight','Tube Nut'); }
     if(wantElbow){ state.data.elbow     = parseElbows(wb);                                          updated.push('Elbow'); }
     if(!updated.length){
-      // recognised as none of the built-ins → a brand-new product line, named after the file
-      const label = productLabelFromFile(file.name);
-      const key   = productKeyFromLabel(label);
-      const parsed = parseGenericProduct(wb);
-      if(!parsed.Standard.length){
-        toast('No priced rows found in '+file.name);
-        return;
-      }
-      state.data[key] = parsed;
-      state.data.__products = state.data.__products || {};
-      const isNew = !state.data.__products[key];
-      state.data.__products[key] = label;
-      updated.push(label + (isNew ? ' (new product)' : ''));
-      jumpTo = key;   // show the just-added product
+      // None of the built-ins → a new product line named after the file. Columns
+      // are matched by header NAME so a reordered/extra-column file still works;
+      // if a required column can't be found, ask via the mapping popup.
+      const grid = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1, raw:true, defval:null});
+      const headers = grid[0] || [];
+      const map = autoMapColumns(headers);
+      if(mapConfident(map)) addGenericProduct(wb, map, file.name);
+      else openColumnMap(wb, headers, map, file.name);
+      return;   // addGenericProduct / the popup handle the refresh + toast
     }
     persistData();
     fillProducts();
@@ -1478,6 +1542,19 @@ async function handleUpload(file){
     toast('Updated '+updated.join(', ')+' from '+file.name);
   }catch(e){ toast('Could not read '+file.name); }
 }
+// mapping popup buttons
+document.getElementById('mapImport').onclick = ()=>{
+  if(!_pendingUpload) return;
+  const g = k=> Number(document.getElementById('map_'+k).value);
+  const map = {size:g('size'), hex:g('hex'), weight:g('weight'), length:g('length'), labour:g('labour')};
+  if(map.size<0){ document.getElementById('mapErr').textContent='Pick the Size column.'; return; }
+  if(map.weight<0 && map.hex<0){ document.getElementById('mapErr').textContent='Pick a Weight or Hex column so a price can be worked out.'; return; }
+  const {wb, fileName} = _pendingUpload;
+  document.getElementById('mapModal').classList.remove('show'); _pendingUpload=null;
+  addGenericProduct(wb, map, fileName);
+};
+document.getElementById('mapCancel').onclick = closeColumnMap;
+document.getElementById('mapModal').addEventListener('mousedown', e=>{ if(e.target.id==='mapModal') closeColumnMap(); });
 document.getElementById('upXlsx').onchange = e=>{ if(e.target.files[0]) handleUpload(e.target.files[0]); e.target.value=''; };
 document.getElementById('resetData').onclick = ()=>{
   localStorage.removeItem('atf_data');
