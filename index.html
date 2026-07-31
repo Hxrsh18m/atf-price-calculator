@@ -248,6 +248,7 @@
     <span id="syncBadge" title="Live sync status" style="font-size:12px;color:var(--muted)">● connecting…</span>
     <span id="roleBadge" class="muted" style="font-size:12px"></span>
     <div id="adminTools" style="display:none;gap:8px;align-items:center;flex-wrap:wrap">
+      <button class="btn" id="dlTemplate" title="Download a blank Excel template to fill in for a new product">⬇ Template</button>
       <label class="btn" title="Upload a price workbook — auto-detects Straight, Tube Nut and Elbow sheets">⬆ Upload prices<input type="file" id="upXlsx" accept=".xlsx" hidden></label>
       <button class="btn" id="resetData" title="Discard uploads on this device and use the published price sheet">Reset</button>
     </div>
@@ -1448,12 +1449,14 @@ function autoMapColumns(headers){
   return {size,hex,dia,weight,length,labour};
 }
 function mapConfident(m){ return m.size>=0 && (m.weight>=0 || m.hex>=0 || m.dia>=0) && m.length>=0; }
-// Read every sheet's rows into one flat "Standard" list using the column map.
+// Read the first sheet's rows into one flat "Standard" list using the column
+// map. Only the first sheet is read, so a template's "How to use" sheet (or any
+// notes tab) is never mistaken for product rows.
 function parseByMap(wb, map){
   const cell=(r,idx)=> idx>=0 ? r[idx] : null;
   const res=[];
-  for(const name of wb.SheetNames){
-    const ws=wb.Sheets[name]; if(!ws) continue;
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  if(ws){
     const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
     for(let i=1;i<rows.length;i++){ const r=rows[i]; if(!r) continue;
       const sz=cell(r,map.size); if(sz===null||sz===undefined||String(sz).trim()==='') continue;
@@ -1468,6 +1471,45 @@ function parseByMap(wb, map){
   }
   return { Standard: res };
 }
+// Build and download a blank, correctly-formatted product template. Uses the
+// XLSX lib already loaded on the page, so there is no file to host. The header
+// names are exactly what the uploader auto-detects.
+function downloadTemplate(){
+  const header = ['Size','Hex (mm)','Diameter (mm)','Weight (kg/m)','Length (mm)','Labour (₹)'];
+  const data = [
+    header,
+    ['EXAMPLE — 1/2" hex plug', 14, '',  '',   30, 20],   // hex bar → weight auto (A/F² × 0.0068)
+    ['EXAMPLE — 20mm round',    '', 20,  '',   40, 30],   // round bar → weight auto (Ø² × 0.00623)
+    ['EXAMPLE — weight given',  '', '',  0.85, 30, 25],   // weight typed in directly
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  ws['!cols'] = [{wch:24},{wch:10},{wch:14},{wch:14},{wch:12},{wch:12}];
+  const notes = [
+    ['ATF Price Calculator — product upload template'],
+    [''],
+    ['Fill ONE row per size on the "Products" sheet, then delete the EXAMPLE rows.'],
+    ['Columns may be in any order; just keep the header names.'],
+    [''],
+    ['Size            The text shown in the Size dropdown. Required.'],
+    ['Hex (mm)        Across-flats of a HEX bar. Weight auto-calculates: A/F² × 0.0068.'],
+    ['Diameter (mm)   For a ROUND bar. Weight auto-calculates: Ø² × 0.00623.'],
+    ['Weight (kg/m)   Fill this to set weight yourself; overrides Hex/Diameter. Else leave blank.'],
+    ['Length (mm)     Needed for the metal price.'],
+    ['Labour (₹)      Per piece. Optional.'],
+    [''],
+    ['Price = (Weight ÷ 1000) × Length × today’s SS rate + Labour.'],
+    ['The SS rate is entered live in the app, not in this file.'],
+    ['Name the file after the product, e.g. "Reducer.xlsx" becomes a "Reducer" product.'],
+  ].map(r=>[r[0]]);
+  const wsN = XLSX.utils.aoa_to_sheet(notes);
+  wsN['!cols'] = [{wch:95}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Products');
+  XLSX.utils.book_append_sheet(wb, wsN, 'How to use');
+  XLSX.writeFile(wb, 'ATF-product-template.xlsx');
+  toast('Template downloaded — fill it and upload');
+}
+document.getElementById('dlTemplate').onclick = downloadTemplate;
 // Create/update a user-added product from a parsed workbook + column map, then
 // show it. Shared by the auto path and the mapping popup's Import button.
 function addGenericProduct(wb, map, fileName){
