@@ -603,7 +603,8 @@ function currentItem(){
   if(sel.value==='__custom__') return state.customItem;
   return currentRows()[Number(sel.value)||0];
 }
-const hexWeight = hex => Math.round(hex*hex*0.0068*10000)/10000;   // kg/m, formula from CONN.xlsx
+const hexWeight = hex => Math.round(hex*hex*0.0068*10000)/10000;   // kg/m, hex bar (A/F² × 0.0068), from CONN.xlsx
+const roundWeight = dia => Math.round(dia*dia*0.00623*10000)/10000;   // kg/m, round bar (Ø² × 0.00623, standard SS)
 
 // ---- nut catalogue (from the Nut Rates sheet, or derived from the connector nut dims) ----
 function ensureNuts(){
@@ -732,7 +733,8 @@ function openView(item){
     h += vmRow('Machining', item.machining!=null? rupee(item.machining) : vmFmt(null));
   } else {
     h += `<div class="dh">Body</div>`;
-    h += vmRow('Hex (across flats)', vmFmt(item.hex,' mm'));
+    if(item.dia!=null) h += vmRow('Diameter (round bar)', vmFmt(item.dia,' mm'));
+    else               h += vmRow('Hex (across flats)', vmFmt(item.hex,' mm'));
     h += vmRow('Length', vmFmt(item.length,' mm'));
     h += vmRow('Weight', vmFmt(item.weight,' kg/m'));
   }
@@ -1439,12 +1441,13 @@ function autoMapColumns(headers){
   const pick = test => { for(let i=0;i<N.length;i++){ if(used.has(i)) continue; if(test(N[i])){ used.add(i); return i; } } return -1; };
   const size   = pick(h=> h.includes('size')||h.includes('item')||h.startsWith('desc')||h.includes('product'));
   const hex    = pick(h=> h.includes('hex')||h==='af'||h.includes('acrossflat')||h.includes('spanner'));
+  const dia    = pick(h=> h.includes('diameter')||h==='dia'||h.includes('roundbar')||h==='rb'||h.includes('round'));
   const weight = pick(h=> !h.includes('rate') && (h.includes('weight')||h==='wt'||h.includes('kgm')||h.includes('kgperm')));
   const length = pick(h=> h.includes('length')||h==='len'||h.includes('lengthmm'));
   const labour = pick(h=> h.includes('labour')||h.includes('labor')||h.includes('making')||h.includes('wages'));
-  return {size,hex,weight,length,labour};
+  return {size,hex,dia,weight,length,labour};
 }
-function mapConfident(m){ return m.size>=0 && (m.weight>=0 || m.hex>=0) && m.length>=0; }
+function mapConfident(m){ return m.size>=0 && (m.weight>=0 || m.hex>=0 || m.dia>=0) && m.length>=0; }
 // Read every sheet's rows into one flat "Standard" list using the column map.
 function parseByMap(wb, map){
   const cell=(r,idx)=> idx>=0 ? r[idx] : null;
@@ -1455,9 +1458,12 @@ function parseByMap(wb, map){
     for(let i=1;i<rows.length;i++){ const r=rows[i]; if(!r) continue;
       const sz=cell(r,map.size); if(sz===null||sz===undefined||String(sz).trim()==='') continue;
       if(String(sz).trim().toLowerCase()==='size') continue;   // a repeated header row
-      const hexv=num(cell(r,map.hex)); let weight=num(cell(r,map.weight));
-      if(weight===null && hexv!==null) weight=hexWeight(hexv);
-      res.push({size:String(sz).trim(),hex:hexv,weight,length:num(cell(r,map.length)),labour:num(cell(r,map.labour))||0,ferrule:0});
+      const hexv=num(cell(r,map.hex)), diav=num(cell(r,map.dia)); let weight=num(cell(r,map.weight));
+      // Weight column wins. Otherwise derive it: round bar from Ø, else hex from A/F.
+      let bar=null;
+      if(diav!==null){ bar='round'; if(weight===null) weight=roundWeight(diav); }
+      else if(hexv!==null && weight===null){ weight=hexWeight(hexv); }
+      res.push({size:String(sz).trim(),hex:hexv,dia:diav,bar,weight,length:num(cell(r,map.length)),labour:num(cell(r,map.labour))||0,ferrule:0});
     }
   }
   return { Standard: res };
@@ -1486,7 +1492,7 @@ function openColumnMap(wb, headers, guess, fileName){
   document.getElementById('mapSub').textContent =
     fileName + " — I couldn't recognise every column. Pick which column holds each value. Size, plus Weight or Hex, and Length are needed for a price.";
   const cols = (headers||[]).map((h,i)=> colLetter(i)+' — '+String(h==null||h===''?'(blank)':h));
-  const FIELDS=[['size','Size (name shown)'],['hex','Hex A/F'],['weight','Weight (kg/m)'],['length','Length (mm)'],['labour','Labour (₹)']];
+  const FIELDS=[['size','Size (name shown)'],['hex','Hex A/F'],['dia','Diameter (round bar)'],['weight','Weight (kg/m)'],['length','Length (mm)'],['labour','Labour (₹)']];
   document.getElementById('mapRows').innerHTML = FIELDS.map(([k,lbl])=>{
     const opts = '<option value="-1">— none —</option>' +
       cols.map((c,i)=>`<option value="${i}"${guess[k]===i?' selected':''}>${c}</option>`).join('');
@@ -1546,9 +1552,9 @@ async function handleUpload(file){
 document.getElementById('mapImport').onclick = ()=>{
   if(!_pendingUpload) return;
   const g = k=> Number(document.getElementById('map_'+k).value);
-  const map = {size:g('size'), hex:g('hex'), weight:g('weight'), length:g('length'), labour:g('labour')};
+  const map = {size:g('size'), hex:g('hex'), dia:g('dia'), weight:g('weight'), length:g('length'), labour:g('labour')};
   if(map.size<0){ document.getElementById('mapErr').textContent='Pick the Size column.'; return; }
-  if(map.weight<0 && map.hex<0){ document.getElementById('mapErr').textContent='Pick a Weight or Hex column so a price can be worked out.'; return; }
+  if(map.weight<0 && map.hex<0 && map.dia<0){ document.getElementById('mapErr').textContent='Pick a Weight, Hex or Diameter column so a price can be worked out.'; return; }
   const {wb, fileName} = _pendingUpload;
   document.getElementById('mapModal').classList.remove('show'); _pendingUpload=null;
   addGenericProduct(wb, map, fileName);
