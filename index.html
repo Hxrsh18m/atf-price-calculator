@@ -101,9 +101,9 @@
   .uploads{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
   .uploads .btn{cursor:pointer}
   /* new-item modal */
-  #niModal, #viewModal, #poModal, #mapModal{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1100;display:none;align-items:center;justify-content:center;padding:20px}
-  #niModal.show, #viewModal.show, #poModal.show, #mapModal.show{display:flex}
-  #niModal .card, #viewModal .card, #mapModal .card{max-width:460px;width:100%;margin:0;max-height:92vh;overflow:auto}
+  #niModal, #viewModal, #poModal, #mapModal, #tmplModal{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1100;display:none;align-items:center;justify-content:center;padding:20px}
+  #niModal.show, #viewModal.show, #poModal.show, #mapModal.show, #tmplModal.show{display:flex}
+  #niModal .card, #viewModal .card, #mapModal .card, #tmplModal .card{max-width:460px;width:100%;margin:0;max-height:92vh;overflow:auto}
   #mapRows select{width:100%}
   #poModalLines th,#poModalLines td{padding:5px 7px}
   #poModalLines input{padding:6px 7px;font-size:13px}
@@ -432,6 +432,19 @@
   </div>
 </div>
 
+<!-- TEMPLATE BUILDER — pick the columns this product needs, then download -->
+<div id="tmplModal">
+  <div class="card">
+    <h3 style="margin:0 0 4px">Build a template</h3>
+    <div class="muted" style="font-size:13px;margin-bottom:14px">Tick the columns this product needs, then download. Fill it in, rename the file to the product, and upload.</div>
+    <div id="tmplRows"></div>
+    <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" id="tmplCancel">Cancel</button>
+      <button class="btn primary" id="tmplBuild">⬇ Download template</button>
+    </div>
+  </div>
+</div>
+
 <!-- COLUMN-MAP MODAL — shown only when a file's columns can't be auto-detected -->
 <div id="mapModal">
   <div class="card">
@@ -587,9 +600,11 @@ function priceOf(item, grade){
     const machining = item.machining||0;
     return {metal, labour, machining, total: metal+labour+machining, incomplete:(item.weight==null)};
   }
-  // connector — body only (no ferrule, no nut)
+  // connector / generic body — metal from weight×length; machining is an optional
+  // per-piece add-on (used when a generic product's sheet carries it).
   const metal = ((item.weight||0)/1000)*(item.length||0)*rate;
-  return {metal, labour, machining:0, total: metal+labour, incomplete:(item.weight==null || item.length==null)};
+  const machining = item.machining||0;
+  return {metal, labour, machining, total: metal+labour+machining, incomplete:(item.weight==null || item.length==null)};
 }
 
 // ---- rendering ----
@@ -665,7 +680,7 @@ function renderItem(){
 
   let chips = [`<span class="chip">Metal <b>${rupee(p.metal)}</b></span>`,
                `<span class="chip">Labour <b>${rupee(p.labour)}</b></span>`];
-  if(state.cat==='elbow') chips.push(`<span class="chip">Machining <b>${rupee(p.machining)}</b></span>`);
+  if(p.machining) chips.push(`<span class="chip">Machining <b>${rupee(p.machining)}</b></span>`);
   bd.innerHTML = chips.join('');
 
   // last-rate remark for this size
@@ -738,6 +753,7 @@ function openView(item){
     else               h += vmRow('Hex (across flats)', vmFmt(item.hex,' mm'));
     h += vmRow('Length', vmFmt(item.length,' mm'));
     h += vmRow('Weight', vmFmt(item.weight,' kg/m'));
+    if(item.machining) h += vmRow('Machining', rupee(item.machining));
   }
   h += vmRow('Price · SS 304 (live)', rupee(priceOf(item,'304').total));
   h += vmRow('Price · SS 316 (live)', rupee(priceOf(item,'316').total));
@@ -1446,7 +1462,8 @@ function autoMapColumns(headers){
   const weight = pick(h=> !h.includes('rate') && (h.includes('weight')||h==='wt'||h.includes('kgm')||h.includes('kgperm')));
   const length = pick(h=> h.includes('length')||h==='len'||h.includes('lengthmm'));
   const labour = pick(h=> h.includes('labour')||h.includes('labor')||h.includes('making')||h.includes('wages'));
-  return {size,hex,dia,weight,length,labour};
+  const machining = pick(h=> h.includes('machin')||h.includes('finishing'));
+  return {size,hex,dia,weight,length,labour,machining};
 }
 function mapConfident(m){ return m.size>=0 && (m.weight>=0 || m.hex>=0 || m.dia>=0) && m.length>=0; }
 // Read the first sheet's rows into one flat "Standard" list using the column
@@ -1466,50 +1483,69 @@ function parseByMap(wb, map){
       let bar=null;
       if(diav!==null){ bar='round'; if(weight===null) weight=roundWeight(diav); }
       else if(hexv!==null && weight===null){ weight=hexWeight(hexv); }
-      res.push({size:String(sz).trim(),hex:hexv,dia:diav,bar,weight,length:num(cell(r,map.length)),labour:num(cell(r,map.labour))||0,ferrule:0});
+      res.push({size:String(sz).trim(),hex:hexv,dia:diav,bar,weight,length:num(cell(r,map.length)),
+        labour:num(cell(r,map.labour))||0,machining:num(cell(r,map.machining))||0,ferrule:0});
     }
   }
   return { Standard: res };
 }
-// Build and download a blank, correctly-formatted product template. Uses the
-// XLSX lib already loaded on the page, so there is no file to host. The header
-// names are exactly what the uploader auto-detects.
-function downloadTemplate(){
-  const header = ['Size','Hex (mm)','Diameter (mm)','Weight (kg/m)','Length (mm)','Labour (₹)'];
-  const data = [
-    header,
-    ['EXAMPLE — 1/2" hex plug', 14, '',  '',   30, 20],   // hex bar → weight auto (A/F² × 0.0068)
-    ['EXAMPLE — 20mm round',    '', 20,  '',   40, 30],   // round bar → weight auto (Ø² × 0.00623)
-    ['EXAMPLE — weight given',  '', '',  0.85, 30, 25],   // weight typed in directly
-  ];
-  const ws = XLSX.utils.aoa_to_sheet(data);
-  ws['!cols'] = [{wch:24},{wch:10},{wch:14},{wch:14},{wch:12},{wch:12}];
+// The columns a template can carry. `size` is always in; the rest are picked in
+// the popup. `header` is exactly what the uploader auto-detects; `ex` is the
+// value put in the single EXAMPLE row.
+const TEMPLATE_COLS = [
+  {key:'size',      header:'Size',           ex:'EXAMPLE — replace this row', note:'The text shown in the Size dropdown. Required.', always:true},
+  {key:'hex',       header:'Hex (mm)',        ex:14,   note:'Across-flats of a HEX bar. Weight auto-calculates (A/F² × 0.0068).'},
+  {key:'dia',       header:'Diameter (mm)',   ex:20,   note:'For a ROUND bar. Weight auto-calculates (Ø² × 0.00623).'},
+  {key:'weight',    header:'Weight (kg/m)',   ex:'',   note:'Type the weight yourself; overrides Hex/Diameter. Leave blank to auto-calculate.'},
+  {key:'length',    header:'Length (mm)',     ex:30,   note:'Bar length. Needed for the metal cost.'},
+  {key:'labour',    header:'Labour (₹)',      ex:20,   note:'Per piece. Optional.'},
+  {key:'machining', header:'Machining (₹)',   ex:0,    note:'Extra ₹ per piece for machining / finishing. Optional.'},
+];
+function openTemplateModal(){
+  const preChecked = {hex:true, length:true, labour:true};   // the common set
+  document.getElementById('tmplRows').innerHTML = TEMPLATE_COLS.map(c=>{
+    const checked = (c.always || preChecked[c.key]) ? ' checked' : '';
+    const dis = c.always ? ' disabled' : '';
+    return `<label style="display:flex;gap:10px;align-items:flex-start;margin-bottom:11px;cursor:pointer">
+      <input type="checkbox" class="tmplcol" value="${c.key}"${checked}${dis} style="margin-top:3px">
+      <span><b>${c.header}</b>${c.always?' <span class="muted" style="font-size:11px">(always)</span>':''}<br>
+        <span class="muted" style="font-size:12px">${c.note}</span></span></label>`;
+  }).join('');
+  document.getElementById('tmplModal').classList.add('show');
+}
+function buildTemplate(){
+  const chosen = new Set(['size']);
+  document.querySelectorAll('.tmplcol:checked').forEach(cb=> chosen.add(cb.value));
+  const cols = TEMPLATE_COLS.filter(c=> chosen.has(c.key));
+  const header  = cols.map(c=> c.header);
+  const example = cols.map(c=> c.ex);
+  const ws = XLSX.utils.aoa_to_sheet([header, example]);
+  ws['!cols'] = cols.map(c=> ({wch: c.key==='size' ? 26 : 14}));
   const notes = [
     ['ATF Price Calculator — product upload template'],
     [''],
-    ['Fill ONE row per size on the "Products" sheet, then delete the EXAMPLE rows.'],
-    ['Columns may be in any order; just keep the header names.'],
+    ['Fill ONE row per size on the "Products" sheet, then delete the EXAMPLE row.'],
+    ['Keep the header names as they are; the column order does not matter.'],
     [''],
-    ['Size            The text shown in the Size dropdown. Required.'],
-    ['Hex (mm)        Across-flats of a HEX bar. Weight auto-calculates: A/F² × 0.0068.'],
-    ['Diameter (mm)   For a ROUND bar. Weight auto-calculates: Ø² × 0.00623.'],
-    ['Weight (kg/m)   Fill this to set weight yourself; overrides Hex/Diameter. Else leave blank.'],
-    ['Length (mm)     Needed for the metal price.'],
-    ['Labour (₹)      Per piece. Optional.'],
+    ...cols.map(c=> [c.header + '   —   ' + c.note]),
     [''],
-    ['Price = (Weight ÷ 1000) × Length × today’s SS rate + Labour.'],
+    ['Price = (Weight ÷ 1000) × Length × today’s SS rate + Labour + Machining.'],
     ['The SS rate is entered live in the app, not in this file.'],
-    ['Name the file after the product, e.g. "Reducer.xlsx" becomes a "Reducer" product.'],
-  ].map(r=>[r[0]]);
-  const wsN = XLSX.utils.aoa_to_sheet(notes);
-  wsN['!cols'] = [{wch:95}];
+    ['Rename the file to the product name before uploading — "Reducer.xlsx" becomes a "Reducer" product.'],
+  ].map(r=> [r[0]]);
+  const wsN = XLSX.utils.aoa_to_sheet(notes); wsN['!cols'] = [{wch:95}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Products');
   XLSX.utils.book_append_sheet(wb, wsN, 'How to use');
   XLSX.writeFile(wb, 'ATF-product-template.xlsx');
-  toast('Template downloaded — fill it and upload');
+  document.getElementById('tmplModal').classList.remove('show');
+  toast('Template downloaded — fill it, rename to the product, then upload');
 }
-document.getElementById('dlTemplate').onclick = downloadTemplate;
+function closeTemplateModal(){ document.getElementById('tmplModal').classList.remove('show'); }
+document.getElementById('dlTemplate').onclick = openTemplateModal;
+document.getElementById('tmplBuild').onclick = buildTemplate;
+document.getElementById('tmplCancel').onclick = closeTemplateModal;
+document.getElementById('tmplModal').addEventListener('mousedown', e=>{ if(e.target.id==='tmplModal') closeTemplateModal(); });
 // Create/update a user-added product from a parsed workbook + column map, then
 // show it. Shared by the auto path and the mapping popup's Import button.
 function addGenericProduct(wb, map, fileName){
@@ -1534,7 +1570,7 @@ function openColumnMap(wb, headers, guess, fileName){
   document.getElementById('mapSub').textContent =
     fileName + " — I couldn't recognise every column. Pick which column holds each value. Size, plus Weight or Hex, and Length are needed for a price.";
   const cols = (headers||[]).map((h,i)=> colLetter(i)+' — '+String(h==null||h===''?'(blank)':h));
-  const FIELDS=[['size','Size (name shown)'],['hex','Hex A/F'],['dia','Diameter (round bar)'],['weight','Weight (kg/m)'],['length','Length (mm)'],['labour','Labour (₹)']];
+  const FIELDS=[['size','Size (name shown)'],['hex','Hex A/F'],['dia','Diameter (round bar)'],['weight','Weight (kg/m)'],['length','Length (mm)'],['labour','Labour (₹)'],['machining','Machining (₹)']];
   document.getElementById('mapRows').innerHTML = FIELDS.map(([k,lbl])=>{
     const opts = '<option value="-1">— none —</option>' +
       cols.map((c,i)=>`<option value="${i}"${guess[k]===i?' selected':''}>${c}</option>`).join('');
@@ -1594,7 +1630,7 @@ async function handleUpload(file){
 document.getElementById('mapImport').onclick = ()=>{
   if(!_pendingUpload) return;
   const g = k=> Number(document.getElementById('map_'+k).value);
-  const map = {size:g('size'), hex:g('hex'), dia:g('dia'), weight:g('weight'), length:g('length'), labour:g('labour')};
+  const map = {size:g('size'), hex:g('hex'), dia:g('dia'), weight:g('weight'), length:g('length'), labour:g('labour'), machining:g('machining')};
   if(map.size<0){ document.getElementById('mapErr').textContent='Pick the Size column.'; return; }
   if(map.weight<0 && map.hex<0 && map.dia<0){ document.getElementById('mapErr').textContent='Pick a Weight, Hex or Diameter column so a price can be worked out.'; return; }
   const {wb, fileName} = _pendingUpload;
