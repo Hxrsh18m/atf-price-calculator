@@ -266,6 +266,7 @@
           <option value="connector">Straight</option>
           <option value="elbow">Elbow</option>
           <option value="tubenut">Tube Nut</option>
+          <option value="plug">Plug</option>
         </select>
       </div>
       <div class="fld">
@@ -502,7 +503,8 @@ const PRODUCTS = {
     {label:'Male',   key:'Male'},
     {label:'Female', key:'Female'},
     {label:'Union',  key:'Union'} ] },
-  tubenut:   { label:'Tube Nut', types:[ {label:'Standard', key:'Standard'} ] }
+  tubenut:   { label:'Tube Nut', types:[ {label:'Standard', key:'Standard'} ] },
+  plug:      { label:'Plug', types:[ {label:'Male', key:'Male'} ] }
 };
 function typeLabel(cat, key){ const t=(PRODUCTS[cat]?.types||[]).find(x=>x.key===key); return t? t.label : key; }
 const state = {
@@ -738,7 +740,7 @@ document.getElementById('roundBtn').onclick = ()=>{
 };
 
 // ---- new custom item — fields depend on the product (transient, never saved) ----
-function niIsHex(){ return state.cat==='connector' || state.cat==='tubenut'; }   // hex+length products
+function niIsHex(){ return state.cat==='connector' || state.cat==='tubenut' || state.cat==='plug'; }   // hex+length products
 function openNewItem(){
   ['niSize','niHex','niLen','niWt','niMach','niRemark'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('niErr').textContent='';
@@ -1359,26 +1361,47 @@ function parseElbows(wb){
   }
   return out;
 }
+// Plug = a single male-threaded body. Same columns as a connector sheet, so its
+// workbook is often just a copy of the CONN template (sheet still named
+// "MALE CONN"). Read the first plug/connector-looking sheet into one flat list.
+function parsePlugs(wb){
+  const sheet = wb.SheetNames.find(n=>/PLUG|MALE|CONN/i.test(n)) || wb.SheetNames[0];
+  const ws = sheet && wb.Sheets[sheet]; const res=[];
+  if(ws){
+    const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+    for(let i=1;i<rows.length;i++){ const r=rows[i]; if(!r) continue;
+      const size=r[0]; if(size===null||String(size).trim()==='') continue;
+      const hexv=num(r[1]); let weight=num(r[2]);
+      if(weight===null && hexv!==null) weight=Math.round(hexv*hexv*0.0068*10000)/10000;
+      res.push({size:String(size).trim(),hex:hexv,weight,length:num(r[3]),labour:num(r[6])||0,ferrule:0});
+    }
+  }
+  return { Male: res };
+}
 function persistData(){ try{ localStorage.setItem('atf_data', JSON.stringify(state.data)); }catch(e){} }
-// One upload for every product. It reads the workbook, works out which product
-// sheets it carries — CONN.xlsx-style (MALE/FEMALE CONN + Nut Rates) and/or
-// elbow.xlsx-style (MALE/FEMALE ELBOW) — and updates just those. So a single
-// button now covers Straight, Tube Nut and Elbow, and even a combined workbook
-// holding both families works. Whatever is missing from the file is left as-is.
+// One upload for every product. It reads the workbook and works out which
+// product it carries — from the file name first (a Plug workbook reuses the CONN
+// template, so only its name says "plug"), then from the sheet names:
+// CONN-style (MALE/FEMALE CONN + Nut Rates) → Straight + Tube Nut,
+// ELBOW-style (MALE/FEMALE ELBOW) → Elbow, "plug" in the name → Plug.
+// Whatever a file does not contain is left as-is.
 async function handleUpload(file){
   try{
     const wb = XLSX.read(await file.arrayBuffer(), {type:'array'});
     const names = wb.SheetNames.map(s=>String(s).trim().toUpperCase());
-    const isConn  = names.includes('MALE CONN')  || names.includes('FEMALE CONN')  || names.includes('NUT RATES');
-    const isElbow = names.includes('MALE ELBOW') || names.includes('FEMALE ELBOW');
+    const fname = (file.name||'').toLowerCase();
+    const wantPlug  = fname.includes('plug');
+    const wantElbow = !wantPlug && (fname.includes('elbow') || names.includes('MALE ELBOW') || names.includes('FEMALE ELBOW'));
+    const wantConn  = !wantPlug && (fname.includes('conn')  || names.includes('MALE CONN')  || names.includes('FEMALE CONN') || names.includes('NUT RATES'));
     const updated = [];
-    if(isConn){  state.data.connector = parseConnectors(wb); state.data.nuts = null; ensureNuts(); updated.push('Straight','Tube Nut'); }
-    if(isElbow){ state.data.elbow     = parseElbows(wb);                                          updated.push('Elbow'); }
+    if(wantPlug){  state.data.plug      = parsePlugs(wb);                                          updated.push('Plug'); }
+    if(wantConn){  state.data.connector = parseConnectors(wb); state.data.nuts = null; ensureNuts(); updated.push('Straight','Tube Nut'); }
+    if(wantElbow){ state.data.elbow     = parseElbows(wb);                                          updated.push('Elbow'); }
     if(!updated.length){
-      toast('No product sheets found in '+file.name+' (expected MALE/FEMALE CONN or ELBOW)');
+      toast('No product sheets found in '+file.name+' (expected Plug, CONN or ELBOW)');
       return;
     }
-    persistData(); fillSizes(); renderTable();
+    persistData(); fillTypes(); fillSizes(); renderTable();
     toast('Updated '+updated.join(', ')+' from '+file.name);
   }catch(e){ toast('Could not read '+file.name); }
 }
