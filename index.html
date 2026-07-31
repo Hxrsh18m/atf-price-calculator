@@ -82,6 +82,7 @@
   #gate input[type=text]{margin:14px 0 8px;text-align:center;font-size:16px}
   #gate input[type=password]{margin:0 0 12px;text-align:center;font-size:16px}
   #gate .btn{width:100%}
+  #pwToggle:hover{color:var(--accent)}
   /* toast */
   #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--accent2);color:#06301b;
     font-weight:600;padding:10px 18px;border-radius:24px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:1200}
@@ -116,8 +117,10 @@
     <div class="muted" style="font-size:12px;margin:2px 0 10px">Sign in with your CRM account</div>
     <input id="uid" type="text" placeholder="CRM User ID" autocomplete="username" autocapitalize="none" spellcheck="false">
     <div style="position:relative;margin:0 0 12px">
-      <input id="pw" type="password" placeholder="Password" autocomplete="current-password" style="margin:0;padding-right:62px">
-      <button type="button" id="pwToggle" style="position:absolute;right:6px;top:0;bottom:0;background:none;border:0;color:var(--muted);cursor:pointer;font-size:12px;padding:0 10px">Show</button>
+      <input id="pw" type="password" placeholder="Password" autocomplete="current-password" style="margin:0;padding-right:46px">
+      <button type="button" id="pwToggle" title="Show password" aria-label="Show password" style="position:absolute;right:4px;top:0;bottom:0;width:42px;display:flex;align-items:center;justify-content:center;background:none;border:0;color:var(--muted);cursor:pointer;padding:0;transition:color .15s">
+        <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
     </div>
     <button class="btn primary" id="unlock">Sign in</button>
     <div id="gateErr" class="note" style="text-align:center"></div>
@@ -1356,11 +1359,15 @@ async function doLogin(){
   }
 }
 document.getElementById('unlock').onclick = doLogin;
+const PW_EYE = '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+const PW_EYE_OFF = '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
 document.getElementById('pwToggle').onclick = ()=>{
   const pw=document.getElementById('pw'), t=document.getElementById('pwToggle');
   const show = pw.type==='password';
   pw.type = show ? 'text' : 'password';
-  t.textContent = show ? 'Hide' : 'Show';
+  t.innerHTML = show ? PW_EYE_OFF : PW_EYE;
+  const lbl = show ? 'Hide password' : 'Show password';
+  t.title = lbl; t.setAttribute('aria-label', lbl);
   pw.focus();
 };
 document.getElementById('uid').addEventListener('keydown', e=>{ if(e.key==='Enter') document.getElementById('pw').focus(); });
