@@ -247,8 +247,7 @@
     <span id="syncBadge" title="Live sync status" style="font-size:12px;color:var(--muted)">● connecting…</span>
     <span id="roleBadge" class="muted" style="font-size:12px"></span>
     <div id="adminTools" style="display:none;gap:8px;align-items:center;flex-wrap:wrap">
-      <label class="btn" title="Upload an updated CONN.xlsx">⬆ CONN.xlsx<input type="file" id="upConn" accept=".xlsx" hidden></label>
-      <label class="btn" title="Upload an updated elbow.xlsx">⬆ elbow.xlsx<input type="file" id="upElbow" accept=".xlsx" hidden></label>
+      <label class="btn" title="Upload a price workbook — auto-detects Straight, Tube Nut and Elbow sheets">⬆ Upload prices<input type="file" id="upXlsx" accept=".xlsx" hidden></label>
       <button class="btn" id="resetData" title="Discard uploads on this device and use the published price sheet">Reset</button>
     </div>
     <button class="btn" id="signout" title="Sign out">Sign out</button>
@@ -1361,17 +1360,29 @@ function parseElbows(wb){
   return out;
 }
 function persistData(){ try{ localStorage.setItem('atf_data', JSON.stringify(state.data)); }catch(e){} }
-async function handleUpload(file, kind){
+// One upload for every product. It reads the workbook, works out which product
+// sheets it carries — CONN.xlsx-style (MALE/FEMALE CONN + Nut Rates) and/or
+// elbow.xlsx-style (MALE/FEMALE ELBOW) — and updates just those. So a single
+// button now covers Straight, Tube Nut and Elbow, and even a combined workbook
+// holding both families works. Whatever is missing from the file is left as-is.
+async function handleUpload(file){
   try{
     const wb = XLSX.read(await file.arrayBuffer(), {type:'array'});
-    if(kind==='conn'){ state.data.connector = parseConnectors(wb); state.data.nuts = null; ensureNuts(); }
-    else state.data.elbow = parseElbows(wb);
+    const names = wb.SheetNames.map(s=>String(s).trim().toUpperCase());
+    const isConn  = names.includes('MALE CONN')  || names.includes('FEMALE CONN')  || names.includes('NUT RATES');
+    const isElbow = names.includes('MALE ELBOW') || names.includes('FEMALE ELBOW');
+    const updated = [];
+    if(isConn){  state.data.connector = parseConnectors(wb); state.data.nuts = null; ensureNuts(); updated.push('Straight','Tube Nut'); }
+    if(isElbow){ state.data.elbow     = parseElbows(wb);                                          updated.push('Elbow'); }
+    if(!updated.length){
+      toast('No product sheets found in '+file.name+' (expected MALE/FEMALE CONN or ELBOW)');
+      return;
+    }
     persistData(); fillSizes(); renderTable();
-    toast('Updated from '+file.name);
+    toast('Updated '+updated.join(', ')+' from '+file.name);
   }catch(e){ toast('Could not read '+file.name); }
 }
-document.getElementById('upConn').onchange = e=>{ if(e.target.files[0]) handleUpload(e.target.files[0],'conn'); e.target.value=''; };
-document.getElementById('upElbow').onchange = e=>{ if(e.target.files[0]) handleUpload(e.target.files[0],'elbow'); e.target.value=''; };
+document.getElementById('upXlsx').onchange = e=>{ if(e.target.files[0]) handleUpload(e.target.files[0]); e.target.value=''; };
 document.getElementById('resetData').onclick = ()=>{
   localStorage.removeItem('atf_data');
   if(window.__published){ state.data = JSON.parse(JSON.stringify(window.__published)); fillSizes(); renderTable(); toast('Reset to published prices'); }
