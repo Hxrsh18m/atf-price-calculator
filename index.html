@@ -105,6 +105,13 @@
   #niModal.show, #viewModal.show, #poModal.show, #mapModal.show, #tmplModal.show{display:flex}
   #niModal .card, #viewModal .card, #mapModal .card, #tmplModal .card{max-width:460px;width:100%;margin:0;max-height:92vh;overflow:auto}
   #mapRows select{width:100%}
+  #tmplRows label{display:flex;gap:11px;align-items:flex-start;margin-bottom:13px;cursor:pointer;
+    text-transform:none;letter-spacing:normal;font-size:13.5px;color:var(--text)}
+  #tmplRows label b{color:var(--text);font-weight:600}
+  #tmplRows label .muted{display:block;font-size:12px;margin-top:2px;line-height:1.35}
+  #tmplRows input[type=checkbox]{width:17px;height:17px;flex:0 0 17px;padding:0;margin:1px 0 0;
+    accent-color:var(--accent);cursor:pointer}
+  #tmplRows input[type=checkbox]:disabled{cursor:default;opacity:.7}
   #poModalLines th,#poModalLines td{padding:5px 7px}
   #poModalLines input{padding:6px 7px;font-size:13px}
   #allPosTbl a{color:var(--accent);text-decoration:none;font-weight:600}
@@ -1506,10 +1513,10 @@ function openTemplateModal(){
   document.getElementById('tmplRows').innerHTML = TEMPLATE_COLS.map(c=>{
     const checked = (c.always || preChecked[c.key]) ? ' checked' : '';
     const dis = c.always ? ' disabled' : '';
-    return `<label style="display:flex;gap:10px;align-items:flex-start;margin-bottom:11px;cursor:pointer">
-      <input type="checkbox" class="tmplcol" value="${c.key}"${checked}${dis} style="margin-top:3px">
-      <span><b>${c.header}</b>${c.always?' <span class="muted" style="font-size:11px">(always)</span>':''}<br>
-        <span class="muted" style="font-size:12px">${c.note}</span></span></label>`;
+    return `<label>
+      <input type="checkbox" class="tmplcol" value="${c.key}"${checked}${dis}>
+      <span><b>${c.header}</b>${c.always?' <span class="muted" style="display:inline">(always)</span>':''}
+        <span class="muted">${c.note}</span></span></label>`;
   }).join('');
   document.getElementById('tmplModal').classList.add('show');
 }
