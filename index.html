@@ -627,7 +627,7 @@ function currentItem(){
   return currentRows()[Number(sel.value)||0];
 }
 const hexWeight = hex => Math.round(hex*hex*0.0068*10000)/10000;   // kg/m, hex bar (A/F² × 0.0068), from CONN.xlsx
-const roundWeight = dia => Math.round(dia*dia*0.00623*10000)/10000;   // kg/m, round bar (Ø² × 0.00623, standard SS)
+const roundWeight = dia => Math.round(dia*dia*0.0068*10000)/10000;   // kg/m, round bar (Ø² × 0.00680)
 
 // ---- nut catalogue (from the Nut Rates sheet, or derived from the connector nut dims) ----
 function ensureNuts(){
@@ -1502,7 +1502,7 @@ function parseByMap(wb, map){
 const TEMPLATE_COLS = [
   {key:'size',      header:'Size',           ex:'EXAMPLE — replace this row', note:'The text shown in the Size dropdown. Required.', always:true},
   {key:'hex',       header:'Hex (mm)',        ex:14,   note:'Across-flats of a HEX bar. Weight auto-calculates (A/F² × 0.0068).'},
-  {key:'dia',       header:'Diameter (mm)',   ex:20,   note:'For a ROUND bar. Weight auto-calculates (Ø² × 0.00623).'},
+  {key:'dia',       header:'Diameter (mm)',   ex:20,   note:'For a ROUND bar. Weight auto-calculates (Ø² × 0.00680).'},
   {key:'weight',    header:'Weight (kg/m)',   ex:'',   note:'Type the weight yourself; overrides Hex/Diameter. Leave blank to auto-calculate.'},
   {key:'length',    header:'Length (mm)',     ex:30,   note:'Bar length. Needed for the metal cost.'},
   {key:'labour',    header:'Labour (₹)',      ex:20,   note:'Per piece. Optional.'},
