@@ -4,6 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Arihant ATF — Price Calculator</title>
+<!-- PWA: installable on phones ("Add to Home screen") -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0c203a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ATF Calc">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icon-192.png">
 <style>
   :root{
     --bg:#0f1720; --panel:#17222e; --panel2:#1e2c3a; --line:#2b3b4c;
@@ -1860,6 +1869,12 @@ try{
 }catch(e){
   console.warn('Firebase init failed', e);
   if(window.onSyncError) window.onSyncError(e);
+}
+</script>
+<script>
+// Register the service worker so the calculator can be installed as an app.
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=> navigator.serviceWorker.register('sw.js').catch(()=>{}));
 }
 </script>
 </body>
