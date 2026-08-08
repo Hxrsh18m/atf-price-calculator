@@ -153,9 +153,12 @@
   .uploads{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
   .uploads .btn{cursor:pointer}
   /* new-item modal */
-  #niModal, #viewModal, #poModal, #mapModal, #tmplModal{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1100;display:none;align-items:center;justify-content:center;padding:20px}
-  #niModal.show, #viewModal.show, #poModal.show, #mapModal.show, #tmplModal.show{display:flex}
-  #niModal .card, #viewModal .card, #mapModal .card, #tmplModal .card{max-width:460px;width:100%;margin:0;max-height:92vh;overflow:auto}
+  #niModal, #viewModal, #poModal, #mapModal, #tmplModal, #exportModal{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1100;display:none;align-items:center;justify-content:center;padding:20px}
+  #niModal.show, #viewModal.show, #poModal.show, #mapModal.show, #tmplModal.show, #exportModal.show{display:flex}
+  #niModal .card, #viewModal .card, #mapModal .card, #tmplModal .card, #exportModal .card{max-width:460px;width:100%;margin:0;max-height:92vh;overflow:auto}
+  #exportRows .exprow{display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding:9px 2px;border-bottom:1px solid var(--line);font-size:14px}
+  #exportRows .exprow .btn{padding:4px 12px;font-size:15px;line-height:1.2}
   #mapRows select{width:100%}
   #tmplRows label{display:flex;gap:11px;align-items:flex-start;margin-bottom:13px;cursor:pointer;
     text-transform:none;letter-spacing:normal;font-size:13.5px;color:var(--text)}
@@ -348,6 +351,7 @@
     <div id="adminTools" style="display:none;gap:8px;align-items:center;flex-wrap:wrap">
       <button class="btn" id="dlTemplate" title="Download a blank Excel template to fill in for a new product">⬇ Template</button>
       <label class="btn" title="Upload a price workbook — auto-detects Straight, Tube Nut and Elbow sheets">⬆ Upload prices<input type="file" id="upXlsx" accept=".xlsx" hidden></label>
+      <button class="btn" id="dlExport" title="Download the current prices as Excel (back up or move to another device)">⬇ Export</button>
       <button class="btn" id="resetData" title="Discard uploads on this device and use the published price sheet">Reset</button>
     </div>
     <button class="btn" id="signout" title="Sign out">Sign out</button>
@@ -527,6 +531,19 @@
     <div class="muted" style="font-size:12px;margin-bottom:6px" id="vmSub"></div>
     <div id="vmBody"></div>
     <div style="margin-top:16px"><button class="btn" id="vmClose">Close</button></div>
+  </div>
+</div>
+
+<!-- EXPORT — download current prices as Excel (per product or all in one) -->
+<div id="exportModal">
+  <div class="card">
+    <h3 style="margin:0 0 4px">Download products</h3>
+    <div class="muted" style="font-size:13px;margin-bottom:12px">Export the current prices as Excel — to back them up or move them to another device, then re-upload there.</div>
+    <div id="exportRows"></div>
+    <div style="margin-top:14px;display:flex;gap:8px;justify-content:space-between;align-items:center">
+      <button class="btn primary" id="exportAll">⬇ All products (one file)</button>
+      <button class="btn" id="exportClose">Close</button>
+    </div>
   </div>
 </div>
 
@@ -1644,6 +1661,74 @@ document.getElementById('dlTemplate').onclick = openTemplateModal;
 document.getElementById('tmplBuild').onclick = buildTemplate;
 document.getElementById('tmplCancel').onclick = closeTemplateModal;
 document.getElementById('tmplModal').addEventListener('mousedown', e=>{ if(e.target.id==='tmplModal') closeTemplateModal(); });
+// ---- export current prices back to Excel (admin backup / move to another device) ----
+// The original uploaded files are not kept; these are regenerated from the stored
+// (merged) data. Only columns that actually hold data are written. For a custom
+// product this round-trips: the file re-uploads and merges straight back.
+const EXPORT_FIELDS = [
+  ['type','Type'], ['size','Size'], ['hex','Hex (mm)'], ['dia','Diameter (mm)'],
+  ['forging','Forging (mm)'], ['weight','Weight (kg/m)'], ['length','Length (mm)'],
+  ['labour','Labour (₹)'], ['machining','Machining (₹)'],
+  ['nutHex','Nut Hex (mm)'], ['nutWeight','Nut Weight (kg/m)'], ['nutLength','Nut Length (mm)']
+];
+function exportRowsFor(cat){
+  const def = prodDef(cat), out = [];
+  if(cat==='tubenut'){
+    (nutList()||[]).forEach(n=> out.push({type:'Standard', size:n.od, nutHex:n.nutHex, nutWeight:n.nutWeight, nutLength:n.nutLength}));
+    return out;
+  }
+  (def.types||[]).forEach(t=>{
+    (((state.data||{})[cat]||{})[t.key] || []).forEach(r=> out.push(Object.assign({type:t.label}, r)));
+  });
+  return out;
+}
+function sheetFromRows(rows, multiType){
+  const has = f => rows.some(r=> r[f]!=null && r[f]!=='' );
+  const cols = EXPORT_FIELDS.filter(([f])=> f==='size' ? true : (f==='type' ? multiType : has(f)));
+  const aoa = [cols.map(c=>c[1])];
+  rows.forEach(r=> aoa.push(cols.map(([f])=> r[f]==null ? '' : r[f])));
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = cols.map(c=> ({wch: c[0]==='size' ? 22 : 13}));
+  return ws;
+}
+function safeSheetName(s){ return String(s||'product').replace(/[^\w -]+/g,'').trim().slice(0,28) || 'product'; }
+function downloadProduct(cat){
+  const label = prodDef(cat).label, rows = exportRowsFor(cat);
+  if(!rows.length){ toast('No sizes to export in '+label); return; }
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, sheetFromRows(rows, (prodDef(cat).types||[]).length>1), 'Products');
+  XLSX.writeFile(wb, safeSheetName(label)+'.xlsx');
+  toast('Downloaded '+label+'.xlsx');
+}
+function downloadAllProducts(){
+  const wb = XLSX.utils.book_new(); const used = {}; let any = false;
+  Object.keys(productDefs()).forEach(cat=>{
+    const rows = exportRowsFor(cat); if(!rows.length) return;
+    let nm = safeSheetName(prodDef(cat).label);
+    while(used[nm]){ nm = nm.slice(0,25)+'_'+Object.keys(used).length; }
+    used[nm] = 1;
+    XLSX.utils.book_append_sheet(wb, sheetFromRows(rows, (prodDef(cat).types||[]).length>1), nm);
+    any = true;
+  });
+  if(!any){ toast('No products to export'); return; }
+  XLSX.writeFile(wb, 'ATF-products.xlsx');
+  toast('Downloaded ATF-products.xlsx');
+}
+function openExportModal(){
+  const defs = productDefs();
+  document.getElementById('exportRows').innerHTML = Object.keys(defs).map(cat=>{
+    const n = exportRowsFor(cat).length;
+    return `<div class="exprow"><span>${defs[cat].label} <span class="muted">(${n} size${n===1?'':'s'})</span></span>
+      <button class="btn expdl" data-cat="${cat}"${n?'':' disabled'} title="Download ${defs[cat].label}.xlsx">⬇</button></div>`;
+  }).join('');
+  document.querySelectorAll('#exportRows .expdl').forEach(b=> b.onclick=()=> downloadProduct(b.dataset.cat));
+  document.getElementById('exportModal').classList.add('show');
+}
+function closeExportModal(){ document.getElementById('exportModal').classList.remove('show'); }
+document.getElementById('dlExport').onclick = openExportModal;
+document.getElementById('exportAll').onclick = downloadAllProducts;
+document.getElementById('exportClose').onclick = closeExportModal;
+document.getElementById('exportModal').addEventListener('mousedown', e=>{ if(e.target.id==='exportModal') closeExportModal(); });
 // Create/update a user-added product from a parsed workbook + column map, then
 // show it. Shared by the auto path and the mapping popup's Import button.
 function addGenericProduct(wb, map, fileName){
