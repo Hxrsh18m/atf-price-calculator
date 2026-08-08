@@ -413,7 +413,7 @@
     </div>
     <div class="remarkbar">
       <div class="remark empty" id="itemRemark">No rate saved for this size yet.</div>
-      <button class="btn save" id="saveRate">💾 Save current rate for this size</button>
+      <button class="btn save" id="saveRate">💾 Save rate &amp; labour for this size</button>
     </div>
     <div style="margin-top:16px">
       <button class="btn primary" id="addToPo">➕ Add to Purchase Order</button>
@@ -691,14 +691,29 @@ function getLastRate(size){
   return (window.__sharedSaved||{})[key] || loadRates()[key] || null;  // shared (all devices) wins
 }
 function setLastRate(size,rec){ const o=loadRates(); o[rateKey(state.cat,state.type,size)]=rec; saveRatesStore(o); }
+// When you switch to a size that has a saved labour, load it back into the
+// Labour box so the old labour is what you see (and price with). Called only on
+// a size/product/type change — never mid-typing — so editing labour still works.
+function restoreLabourForCurrentSize(){
+  const item = currentItem();
+  if(!item) return;
+  const rec = getLastRate(item.size);
+  if(rec && rec.labour!=null){
+    const lv = Math.max(0, Number(rec.labour)||0);
+    state.labour = lv;
+    const lEl = document.getElementById('labour'); if(lEl) lEl.value = lv || '';
+  }
+}
 function remarkText(rec){
-  if(!rec || (!rec.r304 && !rec.r316)) return '';
+  if(!rec || (!rec.r304 && !rec.r316 && !rec.labour)) return '';
   const p=[]; if(rec.r304) p.push('304 ₹'+rec.r304); if(rec.r316) p.push('316 ₹'+rec.r316);
-  return 'Last rate: '+p.join('  ·  ')+(rec.date? '  ·  saved '+rec.date : '');
+  if(rec.labour) p.push('Labour ₹'+rec.labour);
+  return 'Last saved: '+p.join('  ·  ')+(rec.date? '  ·  '+rec.date : '');
 }
 function remarkShort(rec){
-  if(!rec || (!rec.r304 && !rec.r316)) return '<span class="muted">—</span>';
+  if(!rec || (!rec.r304 && !rec.r316 && !rec.labour)) return '<span class="muted">—</span>';
   const p=[]; if(rec.r304) p.push('304 ₹'+rec.r304); if(rec.r316) p.push('316 ₹'+rec.r316);
+  if(rec.labour) p.push('Lab ₹'+rec.labour);
   return p.join(' · ')+(rec.date? ' <span class="muted">('+rec.date+')</span>' : '');
 }
 
@@ -772,6 +787,7 @@ function fillSizes(){
   const customOpt = state.customItem ? `<option value="__custom__">★ ${state.customItem.size} (custom · not saved)</option>` : '';
   sel.innerHTML = newOpt + customOpt + realOpts;   // "Add new item" on top
   sel.value = state.customItem ? '__custom__' : (rows.length ? '0' : '');
+  if(!state.customItem) restoreLabourForCurrentSize();   // load the size's remembered labour
   renderItem();
 }
 const round2 = n => Math.round(n*100)/100;
@@ -802,7 +818,7 @@ function renderItem(){
   const rec = getLastRate(item.size);
   const rEl = document.getElementById('itemRemark');
   const txt = remarkText(rec);
-  rEl.textContent = txt || 'No rate saved for this size yet.';
+  rEl.textContent = txt || 'No rate or labour saved for this size yet.';
   rEl.classList.toggle('empty', !txt);
 
   const rate = state.grade==='304'? state.rate304 : state.rate316;
@@ -918,6 +934,7 @@ document.getElementById('sizeSel').onchange = ()=>{
   const sel = document.getElementById('sizeSel');
   if(sel.value==='__new__'){ openNewItem(); return; }
   if(sel.value!=='__custom__') niReturnIdx = Number(sel.value)||0;
+  restoreLabourForCurrentSize();   // load this size's remembered labour
   renderItem();
 };
 document.getElementById('roundBtn').onclick = ()=>{
@@ -990,16 +1007,16 @@ document.getElementById('saveRate').onclick = ()=>{
   const item = currentItem();
   if(!item) return;
   const note = document.getElementById('itemNote');
-  if(!state.rate304 && !state.rate316){
-    note.textContent = 'Enter an SS 304 or 316 rate above before saving.'; return;
+  if(!state.rate304 && !state.rate316 && !state.labour){
+    note.textContent = 'Enter a rate or labour above before saving.'; return;
   }
   const now = new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
-  const rec = { r304: state.rate304||0, r316: state.rate316||0, date: now };
+  const rec = { r304: state.rate304||0, r316: state.rate316||0, labour: state.labour||0, date: now };
   setLastRate(item.size, rec);
   const synced = window.SYNC && window.SYNC.ready;
   if(synced) window.SYNC.setSaved(rateKey(state.cat,state.type,item.size), rec);  // sync to all devices
   renderAll();
-  note.textContent = '✓ Saved last rate for '+item.size + (synced ? ' (synced to all devices).' : ' (saved on this device).');
+  note.textContent = '✓ Saved rate & labour for '+item.size + (synced ? ' (synced to all devices).' : ' (saved on this device).');
   setTimeout(()=>{ if(note.textContent.startsWith('✓')) renderItem(); }, 2500);
 };
 document.getElementById('search').oninput = renderTable;
@@ -2052,7 +2069,7 @@ window.applySharedState = function(d){
   if(typeof syncRate==='function') syncRate();   // refresh the single rate box for the current grade
   // saved-rate remarks — stored under encoded keys with original key in `k`
   const sh={}, raw=d.saved||{};
-  for(const ek in raw){ const v=raw[ek]; if(v && v.k) sh[v.k]={r304:v.r304, r316:v.r316, date:v.date}; }
+  for(const ek in raw){ const v=raw[ek]; if(v && v.k) sh[v.k]={r304:v.r304, r316:v.r316, labour:v.labour, date:v.date}; }
   window.__sharedSaved = sh;
   // shared uploaded products — pull the team's price-sheet uploads
   if('productsJson' in d){
@@ -2121,7 +2138,7 @@ try{
       catch(e){ console.warn('setRate', e); }
     },
     async setSaved(rawKey, rec){
-      try{ await setDoc(ref, {saved:{[encKey(rawKey)]:{k:rawKey, r304:rec.r304, r316:rec.r316, date:rec.date}}}, {merge:true}); }
+      try{ await setDoc(ref, {saved:{[encKey(rawKey)]:{k:rawKey, r304:rec.r304, r316:rec.r316, labour:rec.labour, date:rec.date}}}, {merge:true}); }
       catch(e){ console.warn('setSaved', e); }
     },
     // The whole uploaded-products sheet, as one JSON string, shared with the team.
