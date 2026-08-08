@@ -1483,7 +1483,7 @@ async function login(uid, password){
   try{ j = await r.json(); }catch(e){}
   if(!r.ok || !j || !j.ok) throw new Error((j && j.error) || 'auth failed');
   if(j.token) localStorage.setItem('calc_token', j.token);   // the calculator's own login
-  return { role: j.role, id: j.id, data: j.data };
+  return { role: j.role, id: j.id, data: j.data, isAdmin: !!j.is_admin };
 }
 
 // ---- client-side Excel parsing (mirrors server.py) ----
@@ -1856,13 +1856,17 @@ document.getElementById('resetData').onclick = ()=>{
 };
 
 // ---- password gate ----
-function applyRole(role, who){
+function applyRole(role, who, isAdmin){
   // `admin` here means "may edit prices" (CRM admin, or a user granted the
   // Calculator EditPrices permission) — shown as "Editor", not "Admin", since a
   // granted non-admin CRM user is not a system admin. The badge names the
   // signed-in user so it is clear whose account is in use.
   const admin = role==='admin';
   document.getElementById('adminTools').style.display = admin ? 'flex' : 'none';
+  // Data export is restricted to real CRM admins. A granted editor (edit_prices
+  // only, e.g. a Procurement Admin) keeps Template / Upload / Reset, but Export
+  // is hidden so they can't download the whole price sheet.
+  document.getElementById('dlExport').style.display = (admin && isAdmin) ? '' : 'none';
   const roleLabel = admin ? 'Editor' : 'Viewer';
   document.getElementById('roleBadge').textContent =
     'Signed in · ' + (who ? who + ' · ' : '') + roleLabel;
@@ -1900,8 +1904,8 @@ function stripCustom(d){
   });
   return changed;
 }
-function enterApp(role, id, data){
-  window.__role = role; window.__published = data;
+function enterApp(role, id, data, isAdmin){
+  window.__role = role; window.__isAdmin = !!isAdmin; window.__published = data;
   const stored = (role==='admin') ? localStorage.getItem('atf_data') : null;
   if(stored){
     try{
@@ -1923,7 +1927,7 @@ function enterApp(role, id, data){
   } else {
     state.data = JSON.parse(JSON.stringify(data));
   }
-  applyRole(role, id);
+  applyRole(role, id, isAdmin);
   document.getElementById('gate').style.display='none';
   fillProducts();   // built-ins + any products the user added by upload
   fillTypes(); fillSizes(); renderTable();
@@ -1947,9 +1951,9 @@ async function doLogin(){
   if(!uid.trim()){ errEl.textContent='Enter your User ID.'; return; }
   errEl.textContent='Checking…';
   try{
-    const {role, id, data} = await login(uid, pw);
-    writeSession({ role, id, exp: Date.now()+IDLE_MS, data });
-    enterApp(role, id, data);
+    const {role, id, data, isAdmin} = await login(uid, pw);
+    writeSession({ role, id, exp: Date.now()+IDLE_MS, data, isAdmin });
+    enterApp(role, id, data, isAdmin);
   }catch(e){
     errEl.textContent = 'Wrong User ID or password.';
   }
@@ -2000,7 +2004,7 @@ window.applySharedState = function(d){
 // whoever the CRM tab is signed in as.
 (async function boot(){
   const s = readSession();
-  if(s && Date.now() < s.exp && s.data){ enterApp(s.role, s.id, s.data); touchSession(); return; }
+  if(s && Date.now() < s.exp && s.data){ enterApp(s.role, s.id, s.data, s.isAdmin); touchSession(); return; }
   endSession();
   if(crmToken()){
     try{
@@ -2008,8 +2012,8 @@ window.applySharedState = function(d){
       if(r.ok){
         const j = await r.json();
         if(j && j.ok){
-          writeSession({ role:j.role, id:j.id, exp:Date.now()+IDLE_MS, data:j.data });
-          enterApp(j.role, j.id, j.data);
+          writeSession({ role:j.role, id:j.id, exp:Date.now()+IDLE_MS, data:j.data, isAdmin:!!j.is_admin });
+          enterApp(j.role, j.id, j.data, !!j.is_admin);
           return;
         }
       }
