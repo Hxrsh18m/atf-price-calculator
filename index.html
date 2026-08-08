@@ -1907,17 +1907,18 @@ function enterApp(role, id, data){
     try{
       const parsed = JSON.parse(stored);
       if(stripCustom(parsed)) localStorage.setItem('atf_data', JSON.stringify(parsed));  // clean up leftovers
-      // if the stored sheet predates nut hex/length/weight, use the freshly published data instead
+      // Keep EVERYTHING the user has stored — Plug and every uploaded product
+      // included. Only the built-in connector + nuts are refreshed from the
+      // freshly published sheet, and only when the stored connector predates the
+      // nut dimensions. Uploads are NEVER wiped on login (that was the bug where
+      // Plug / uploaded products vanished after a logout + login).
       const hasNut = ['Male','Female','Union'].some(t => (parsed.connector?.[t]||[]).some(x=>x.nutWeight!=null));
-      if(hasNut){ state.data = parsed; }
-      else {
-        // stale built-in prices → refresh from published, but keep any products
-        // the user added by upload (they don't exist in the published sheet).
-        const fresh = JSON.parse(JSON.stringify(data));
-        if(parsed.__products){ fresh.__products = parsed.__products;
-          for(const k in parsed.__products){ if(parsed[k]) fresh[k] = parsed[k]; } }
-        state.data = fresh; localStorage.setItem('atf_data', JSON.stringify(fresh));
+      if(!hasNut && data && data.connector){
+        parsed.connector = JSON.parse(JSON.stringify(data.connector));
+        parsed.nuts = null;   // ensureNuts() rebuilds these from the refreshed connector
+        localStorage.setItem('atf_data', JSON.stringify(parsed));
       }
+      state.data = parsed;
     }catch(e){ state.data = JSON.parse(JSON.stringify(data)); }
   } else {
     state.data = JSON.parse(JSON.stringify(data));
