@@ -350,7 +350,7 @@
     <span id="roleBadge" class="muted" style="font-size:12px"></span>
     <div id="adminTools" style="display:none;gap:8px;align-items:center;flex-wrap:wrap">
       <button class="btn" id="dlTemplate" title="Download a blank Excel template to fill in for a new product">⬇ Template</button>
-      <label class="btn" title="Upload a price workbook — auto-detects Straight, Tube Nut and Elbow sheets">⬆ Upload prices<input type="file" id="upXlsx" accept=".xlsx" hidden></label>
+      <label class="btn" title="Upload a price workbook — auto-detects Connector, Tube Nut and Elbow sheets">⬆ Upload prices<input type="file" id="upXlsx" accept=".xlsx" hidden></label>
       <button class="btn" id="dlExport" title="Download the current prices as Excel (back up or move to another device)">⬇ Export</button>
       <button class="btn" id="resetData" title="Discard uploads on this device and use the published price sheet">Reset</button>
     </div>
@@ -635,10 +635,10 @@
 // products → the types shown in the Type dropdown for each.
 // `key` is the data key in state.data[cat]; `label` is what's shown.
 const PRODUCTS = {
-  connector: { label:'Straight', types:[
-    {label:'Male Connector',   key:'Male'},
-    {label:'Female Connector', key:'Female'},
-    {label:'Union',            key:'Union'} ] },
+  connector: { label:'Connector', types:[
+    {label:'Male',   key:'Male'},
+    {label:'Female', key:'Female'},
+    {label:'Union',  key:'Union'} ] },
   elbow:     { label:'Elbow', types:[
     {label:'Male',   key:'Male'},
     {label:'Female', key:'Female'},
@@ -1835,7 +1835,7 @@ async function handleUpload(file){
     const updated = [];
     let jumpTo = null;
     if(wantPlug){  state.data.plug      = parsePlugs(wb);                                          updated.push('Plug'); jumpTo='plug'; }
-    if(wantConn){  state.data.connector = parseConnectors(wb); state.data.nuts = null; ensureNuts(); updated.push('Straight','Tube Nut'); }
+    if(wantConn){  state.data.connector = parseConnectors(wb); state.data.nuts = null; ensureNuts(); updated.push('Connector','Tube Nut'); }
     if(wantElbow){ state.data.elbow     = parseElbows(wb);                                          updated.push('Elbow'); }
     if(!updated.length){
       // None of the built-ins → a new product line named after the file. Columns
