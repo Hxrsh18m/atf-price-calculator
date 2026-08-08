@@ -1737,7 +1737,15 @@ document.getElementById('mapImport').onclick = ()=>{
 };
 document.getElementById('mapCancel').onclick = closeColumnMap;
 document.getElementById('mapModal').addEventListener('mousedown', e=>{ if(e.target.id==='mapModal') closeColumnMap(); });
-document.getElementById('upXlsx').onchange = e=>{ if(e.target.files[0]) handleUpload(e.target.files[0]); e.target.value=''; };
+// Upload wiring. Clear the input BEFORE the picker opens (on click) so choosing
+// the SAME file again still fires `change` — needed to re-upload an edited file
+// with an unchanged name. We deliberately do NOT clear after reading, so the
+// File stays valid while handleUpload reads it asynchronously.
+(function(){
+  const up = document.getElementById('upXlsx');
+  up.addEventListener('click', ()=>{ up.value=''; });
+  up.addEventListener('change', e=>{ const f = e.target.files && e.target.files[0]; if(f) handleUpload(f); });
+})();
 document.getElementById('resetData').onclick = ()=>{
   localStorage.removeItem('atf_data');
   if(window.__published){ state.data = JSON.parse(JSON.stringify(window.__published)); fillSizes(); renderTable(); toast('Reset to published prices'); }
