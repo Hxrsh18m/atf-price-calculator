@@ -1651,7 +1651,24 @@ function addGenericProduct(wb, map, fileName){
   if(!parsed.Standard.length){ toast('No priced rows found in '+fileName); return; }
   const label = productLabelFromFile(fileName);
   const key   = productKeyFromLabel(label);
-  state.data[key] = parsed;
+  // MERGE: if this product already exists, keep its rows and fold the new file in
+  // by size — a size already present is updated to the new values, a new size is
+  // appended, and sizes not in this file are kept. So uploading the same-named
+  // file again and again accumulates sizes instead of replacing them.
+  const existing = (state.data[key] && Array.isArray(state.data[key].Standard)) ? state.data[key].Standard : null;
+  let rows, added = 0, updated = 0;
+  if(existing){
+    const idx = new Map(existing.map((r,i)=>[String(r.size).trim().toLowerCase(), i]));
+    rows = existing.slice();
+    parsed.Standard.forEach(row=>{
+      const k = String(row.size).trim().toLowerCase();
+      if(idx.has(k)){ rows[idx.get(k)] = row; updated++; }
+      else { idx.set(k, rows.length); rows.push(row); added++; }
+    });
+  } else {
+    rows = parsed.Standard;
+  }
+  state.data[key] = { Standard: rows };
   state.data.__products = state.data.__products || {};
   const isNew = !state.data.__products[key];
   state.data.__products[key] = label;
@@ -1659,7 +1676,9 @@ function addGenericProduct(wb, map, fileName){
   state.cat = key; state.customItem = null;
   fillProducts(); document.getElementById('prodSel').value = key;
   fillTypes(); fillSizes(); renderTable(); updateRemoveProd();
-  toast('Updated '+label+(isNew?' (new product)':'')+' from '+fileName);
+  toast(existing
+    ? `Merged into ${label}: ${added} added, ${updated} updated · ${rows.length} sizes total`
+    : `Added ${label}${isNew?' (new product)':''} from ${fileName}`);
 }
 // The mapping popup, shown only when auto-detect can't place a required column.
 let _pendingUpload = null;   // {wb, fileName} awaiting a manual column map
