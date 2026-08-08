@@ -898,11 +898,15 @@ document.getElementById('removeProd').onclick = e=>{
   e.preventDefault();
   const label = state.data && state.data.__products && state.data.__products[state.cat];
   if(!label) return;
-  if(!confirm('Remove the "'+label+'" product and its uploaded prices from this device?')) return;
-  delete state.data[state.cat];
-  delete state.data.__products[state.cat];
+  if(!confirm('Remove the "'+label+'" product for the whole team?')) return;
+  const removed = state.cat;
+  delete state.data[removed];
+  delete state.data.__products[removed];
   state.cat = 'connector'; state.customItem = null;
   persistData();
+  setOverride(removed, null);                            // tombstone: drop it for everyone
+  setOverride('__products', state.data.__products);
+  pushOverrides();
   fillProducts(); fillTypes(); fillSizes(); renderTable();
   toast('Removed '+label);
 };
@@ -1758,6 +1762,9 @@ function addGenericProduct(wb, map, fileName){
   const isNew = !state.data.__products[key];
   state.data.__products[key] = label;
   persistData();
+  setOverride(key, state.data[key]);                    // publish to the team
+  setOverride('__products', state.data.__products);
+  pushOverrides();
   state.cat = key; state.customItem = null;
   fillProducts(); document.getElementById('prodSel').value = key;
   fillTypes(); fillSizes(); renderTable(); updateRemoveProd();
@@ -1822,6 +1829,11 @@ async function handleUpload(file){
       return;   // addGenericProduct / the popup handle the refresh + toast
     }
     persistData();
+    // publish the uploaded built-ins to the whole team
+    if(wantPlug) setOverride('plug', state.data.plug);
+    if(wantConn){ setOverride('connector', state.data.connector); setOverride('nuts', state.data.nuts); }
+    if(wantElbow) setOverride('elbow', state.data.elbow);
+    pushOverrides();
     fillProducts();
     if(jumpTo){ state.cat = jumpTo; state.customItem = null; document.getElementById('prodSel').value = jumpTo; }
     fillTypes(); fillSizes(); renderTable(); updateRemoveProd();
@@ -1927,6 +1939,8 @@ function enterApp(role, id, data, isAdmin){
   } else {
     state.data = JSON.parse(JSON.stringify(data));
   }
+  // fold in the team's shared uploads if Firebase already delivered them
+  if(window.__overrides && Object.keys(window.__overrides).length) applyOverrides();
   applyRole(role, id, isAdmin);
   document.getElementById('gate').style.display='none';
   fillProducts();   // built-ins + any products the user added by upload
@@ -1982,6 +1996,52 @@ function setSyncBadge(text, color){
 }
 window.onSyncReady = ()=> setSyncBadge('● Live', 'var(--accent2)');
 window.onSyncError = ()=> setSyncBadge('● Offline (local only)', 'var(--warn)');
+// ---- shared uploaded products (synced to the whole team) ----
+// window.__overrides mirrors the shared price-sheet uploads: a map of
+// category -> data (plug, elbow, connector, nuts, __products + each custom
+// product). It is applied over the CRM's published base so everyone sees the
+// same uploaded files. `null` for a category means "removed".
+window.__overrides = window.__overrides || {};
+function applyOverrides(){
+  const ov = window.__overrides; if(!ov || !state.data) return;
+  // Union the custom-product registry so no device ever loses its own uploads
+  // when another device publishes.
+  if(ov.__products){ state.data.__products = Object.assign(state.data.__products || {}, ov.__products); }
+  for(const cat in ov){
+    if(cat==='__products') continue;
+    if(ov[cat]===null){                       // tombstone: removed for the whole team
+      delete state.data[cat];
+      if(state.data.__products) delete state.data.__products[cat];
+    } else {
+      state.data[cat] = ov[cat];
+    }
+  }
+  persistData();
+}
+function setOverride(cat, val){
+  window.__overrides = window.__overrides || {};
+  if(val===undefined) delete window.__overrides[cat];
+  else window.__overrides[cat] = val;   // null = removed (tombstone)
+}
+function pushOverrides(){
+  if(window.__role!=='admin') return;                     // only editors publish
+  if(!(window.SYNC && window.SYNC.ready && window.SYNC.setProductsJson)) return;
+  const ov = window.__overrides || {};
+  // plug and custom products exist only via upload — always share them
+  if(state.data){
+    if(state.data.plug) ov.plug = state.data.plug;
+    if(state.data.__products){
+      ov.__products = state.data.__products;
+      for(const k in state.data.__products){ if(state.data[k]) ov[k] = state.data[k]; }
+    }
+  }
+  window.__overrides = ov;
+  try{
+    const str = JSON.stringify(ov);
+    if(str.length > 900000){ toast('Price sheet too large to sync online — saved on this device only.'); return; }
+    window.SYNC.setProductsJson(str);
+  }catch(e){}
+}
 window.applySharedState = function(d){
   d = d || {};
   // material rate + labour — shared for everyone (with fallback to old body-rate/body-labour fields)
@@ -1994,6 +2054,12 @@ window.applySharedState = function(d){
   const sh={}, raw=d.saved||{};
   for(const ek in raw){ const v=raw[ek]; if(v && v.k) sh[v.k]={r304:v.r304, r316:v.r316, date:v.date}; }
   window.__sharedSaved = sh;
+  // shared uploaded products — pull the team's price-sheet uploads
+  if('productsJson' in d){
+    try{ window.__overrides = JSON.parse(d.productsJson || '{}') || {}; }
+    catch(e){ window.__overrides = window.__overrides || {}; }
+    if(state.data){ applyOverrides(); if(typeof fillProducts==='function') fillProducts(); }
+  }
   setSyncBadge('● Live', 'var(--accent2)');
   if(state.data) renderAll();
 };
@@ -2057,6 +2123,11 @@ try{
     async setSaved(rawKey, rec){
       try{ await setDoc(ref, {saved:{[encKey(rawKey)]:{k:rawKey, r304:rec.r304, r316:rec.r316, date:rec.date}}}, {merge:true}); }
       catch(e){ console.warn('setSaved', e); }
+    },
+    // The whole uploaded-products sheet, as one JSON string, shared with the team.
+    async setProductsJson(str){
+      try{ await setDoc(ref, {productsJson:str, productsAt:Date.now()}, {merge:true}); }
+      catch(e){ console.warn('setProductsJson', e); }
     }
   };
   await signInAnonymously(auth);
