@@ -698,10 +698,13 @@ function restoreLabourForCurrentSize(){
   const item = currentItem();
   if(!item) return;
   const rec = getLastRate(item.size);
-  if(rec && rec.labour!=null){
-    const lv = Math.max(0, Number(rec.labour)||0);
-    state.labour = lv;
-    const lEl = document.getElementById('labour'); if(lEl) lEl.value = lv || '';
+  let lv = null;
+  if(rec && rec.labour!=null) lv = rec.labour;                 // a manual save wins
+  else if(Number(item.labour) > 0) lv = Number(item.labour);   // else the labour column from the uploaded file
+  if(lv!=null){
+    const n = Math.max(0, Number(lv)||0);
+    state.labour = n;
+    const lEl = document.getElementById('labour'); if(lEl) lEl.value = n || '';
   }
 }
 function remarkText(rec){
