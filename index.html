@@ -611,6 +611,11 @@
       <div class="fld" style="flex:0 0 auto"><label style="text-transform:none;font-weight:normal"><input type="checkbox" id="poRound" checked style="width:auto;margin-right:6px">Round off</label></div>
       <div class="fld" style="flex:0 0 auto"><label style="text-transform:none;font-weight:normal"><input type="checkbox" id="poNoGst" style="width:auto;margin-right:6px">Remove GST</label></div>
     </div>
+    <div class="row" style="margin-top:10px">
+      <div class="fld"><label>Reason / Internal remark
+        <span style="text-transform:none;font-weight:normal;font-size:11px;color:var(--muted)">🔒 shown in CRM only — not on the vendor PDF</span></label>
+        <textarea id="poRemark" rows="2" maxlength="600" placeholder="Why is this PO being raised? (internal only)"></textarea></div>
+    </div>
     <div style="color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px;margin:14px 0 4px">Line items</div>
     <div class="tblwrap" style="max-height:280px">
       <table id="poModalLines">
@@ -1282,6 +1287,7 @@ document.getElementById('poSubmit').onclick = async ()=>{
   body.set('delivery_time', document.getElementById('poDelivery').value||'');
   body.set('attention', document.getElementById('poAttention').value.trim());
   body.set('term_payment', document.getElementById('poPayment').value.trim());
+  body.set('internal_remark', document.getElementById('poRemark').value.trim());   // CRM-only, not on the PDF
   if(document.getElementById('poRound').checked) body.set('round_off','1');
   if(document.getElementById('poNoGst').checked) body.set('remove_gst','1');
   let missingHsn=false;
