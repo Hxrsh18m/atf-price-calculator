@@ -1850,11 +1850,32 @@ function closeColumnMap(){ document.getElementById('mapModal').classList.remove(
 // "Reducer 2.xlsx" -> label "Reducer 2", key "reducer_2"
 function productLabelFromFile(name){ return String(name||'product').replace(/\.[^.]+$/,'').replace(/[_-]+/g,' ').trim() || 'Product'; }
 function productKeyFromLabel(label){ return 'p_' + label.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,''); }
+// Re-import a "Tube Nut.xlsx" (Size + Hex/Weight/Length by header name) straight
+// into the nut catalogue, so a file named after the product updates Tube Nut
+// without needing the original CONN.xlsx + its Nut Rates sheet.
+function parseNutFile(wb){
+  const name = wb.SheetNames.find(n=>/nut|product/i.test(n)) || wb.SheetNames[0];
+  const ws = name && wb.Sheets[name]; const out=[];
+  if(ws){
+    const rows = XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+    const map = autoMapColumns(rows[0]||[]);
+    const cell=(r,i)=> i>=0? r[i]:null;
+    for(let i=1;i<rows.length;i++){ const r=rows[i]; if(!r) continue;
+      const sz=cell(r,map.size); if(sz==null||String(sz).trim()===''||String(sz).trim().toLowerCase()==='size') continue;
+      const hexv=num(cell(r,map.hex)); let weight=num(cell(r,map.weight));
+      if(weight===null && hexv!==null) weight=hexWeight(hexv);
+      out.push({od:String(sz).trim(), nutHex:hexv, nutWeight:weight,
+                nutLength:num(cell(r,map.length)), labour:num(cell(r,map.labour))||0});
+    }
+  }
+  return out;
+}
 function persistData(){ try{ localStorage.setItem('atf_data', JSON.stringify(state.data)); }catch(e){} }
 // One upload for every product. It reads the workbook and works out which
 // product it carries — from the file name first, then from the sheet names.
-// The three built-ins keep their special handling:
-//   CONN  (name has "conn"  or MALE/FEMALE CONN / Nut Rates)  → Straight + Tube Nut
+// The built-ins keep their special handling, keyed by the file NAME:
+//   CONN  (name has "conn"  or MALE/FEMALE CONN / Nut Rates)  → Connector (+ Tube Nut when it has nut data)
+//   NUT   (name has "nut", e.g. "Tube Nut.xlsx")             → Tube Nut catalogue
 //   ELBOW (name has "elbow" or MALE/FEMALE ELBOW)             → Elbow
 //   PLUG  (name has "plug")                                    → Plug
 // ANY OTHER file becomes a NEW product line named after the file — so future
@@ -1866,20 +1887,28 @@ async function handleUpload(file){
     const names = wb.SheetNames.map(s=>String(s).trim().toUpperCase());
     const fname = (file.name||'').toLowerCase();
     const wantPlug  = fname.includes('plug');
-    const wantElbow = !wantPlug && (fname.includes('elbow') || names.includes('MALE ELBOW') || names.includes('FEMALE ELBOW'));
-    const wantConn  = !wantPlug && (fname.includes('conn')  || names.includes('MALE CONN')  || names.includes('FEMALE CONN') || names.includes('NUT RATES'));
+    const wantNut   = !wantPlug && fname.includes('nut');   // "Tube Nut.xlsx" → the Tube Nut catalogue
+    const wantElbow = !wantPlug && !wantNut && (fname.includes('elbow') || names.includes('MALE ELBOW') || names.includes('FEMALE ELBOW'));
+    const wantConn  = !wantPlug && !wantNut && (fname.includes('conn')  || names.includes('MALE CONN')  || names.includes('FEMALE CONN') || names.includes('NUT RATES'));
     const updated = [];
     let jumpTo = null;
     const CTYPES = ['Male','Female','Union'];
     if(wantPlug){  state.data.plug      = parsePlugs(wb);                                          updated.push('Plug'); jumpTo='plug'; }
+    if(wantNut){
+      const nuts = parseNutFile(wb);
+      if(nuts.length){ state.data.nuts = nuts; updated.push('Tube Nut'); jumpTo='tubenut'; }
+    }
     if(wantConn){
       let parsed = parseConnectors(wb);
       if(!anyTypeRows(parsed, CTYPES)) parsed = parseTypedProduct(wb, CTYPES);   // exported file → header/Type format
-      state.data.connector = parsed; state.data.nuts = null; ensureNuts();
+      state.data.connector = parsed;
+      // Only rebuild Tube Nut from the connector when THIS file carries nut data
+      // (a CONN.xlsx with a Nut Rates sheet). An exported connector has none, so
+      // leave any separately-uploaded Tube Nut alone.
+      const hasNutData = CTYPES.some(t => (parsed[t]||[]).some(x=>x.nutWeight!=null));
+      if(hasNutData){ state.data.nuts = null; ensureNuts(); }
       updated.push('Connector');
-      // Tube Nut is built from the "Nut Rates" sheet in CONN.xlsx; an exported
-      // file has no nut data, so only claim it when nuts actually loaded.
-      if((state.data.nuts||[]).length) updated.push('Tube Nut');
+      if(hasNutData && (state.data.nuts||[]).length) updated.push('Tube Nut');
     }
     if(wantElbow){
       let parsed = parseElbows(wb);
@@ -1900,7 +1929,8 @@ async function handleUpload(file){
     persistData();
     // publish the uploaded built-ins to the whole team
     if(wantPlug) setOverride('plug', state.data.plug);
-    if(wantConn){ setOverride('connector', state.data.connector); setOverride('nuts', state.data.nuts); }
+    if(wantNut) setOverride('nuts', state.data.nuts);
+    if(wantConn){ setOverride('connector', state.data.connector); if((state.data.nuts||[]).length) setOverride('nuts', state.data.nuts); }
     if(wantElbow) setOverride('elbow', state.data.elbow);
     pushOverrides();
     fillProducts();
@@ -2000,7 +2030,10 @@ function enterApp(role, id, data, isAdmin){
       const hasNut = ['Male','Female','Union'].some(t => (parsed.connector?.[t]||[]).some(x=>x.nutWeight!=null));
       if(!hasNut && data && data.connector){
         parsed.connector = JSON.parse(JSON.stringify(data.connector));
-        parsed.nuts = null;   // ensureNuts() rebuilds these from the refreshed connector
+        // Rebuild nuts only if the published connector carries nut dims; otherwise
+        // keep an explicitly-uploaded Tube Nut catalogue.
+        const pubHasNut = ['Male','Female','Union'].some(t => (data.connector[t]||[]).some(x=>x.nutWeight!=null));
+        if(pubHasNut) parsed.nuts = null;   // ensureNuts() rebuilds from the refreshed connector
         localStorage.setItem('atf_data', JSON.stringify(parsed));
       }
       state.data = parsed;
