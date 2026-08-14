@@ -1590,6 +1590,36 @@ function parsePlugs(wb){
   }
   return { Male: res };
 }
+// Re-import an EXPORTED Connector/Elbow file — one sheet with a "Type" column
+// (Male / Female / Union) and header-named columns — grouping rows by Type.
+// Used as a fallback when the classic multi-sheet (MALE CONN…) parse finds none.
+function parseTypedProduct(wb, types){
+  const out = {}; types.forEach(t=> out[t]=[]);
+  const name = wb.SheetNames.find(n=>/product/i.test(n)) || wb.SheetNames[0];
+  const ws = name && wb.Sheets[name];
+  if(!ws) return out;
+  const rows = XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+  const headers = rows[0] || [];
+  const map = autoMapColumns(headers);
+  const typeIdx = headers.findIndex(h=> /type/i.test(String(h==null?'':h)));
+  const norm = s => String(s==null?'':s).trim().toLowerCase();
+  const cell=(r,i)=> i>=0 ? r[i] : null;
+  for(let i=1;i<rows.length;i++){ const r=rows[i]; if(!r) continue;
+    const sz=cell(r,map.size); if(sz==null||String(sz).trim()===''||String(sz).trim().toLowerCase()==='size') continue;
+    const hexv=num(cell(r,map.hex)), diav=num(cell(r,map.dia)); let weight=num(cell(r,map.weight)); let bar=null;
+    if(diav!==null){ bar='round'; if(weight===null) weight=roundWeight(diav); }
+    else if(hexv!==null && weight===null){ weight=hexWeight(hexv); }
+    const item={size:String(sz).trim(),hex:hexv,dia:diav,bar,weight,length:num(cell(r,map.length)),
+      labour:num(cell(r,map.labour))||0,machining:num(cell(r,map.machining))||0,ferrule:0};
+    let tkey = types[0];
+    if(typeIdx>=0){ const tv=norm(r[typeIdx]);
+      tkey = types.find(t=> norm(t)===tv) || types.find(t=> tv.startsWith(norm(t))) || types[0];
+    }
+    out[tkey].push(item);
+  }
+  return out;
+}
+function anyTypeRows(parsed, types){ return types.some(t=> ((parsed && parsed[t]) || []).length); }
 // ---- generic body products: columns matched by HEADER NAME, not position ----
 // A supplier's sheet may reorder columns or add extra ones, so we never rely on
 // a fixed order. normHead squashes a header to letters+digits ("A/F"->"af",
@@ -1840,9 +1870,18 @@ async function handleUpload(file){
     const wantConn  = !wantPlug && (fname.includes('conn')  || names.includes('MALE CONN')  || names.includes('FEMALE CONN') || names.includes('NUT RATES'));
     const updated = [];
     let jumpTo = null;
+    const CTYPES = ['Male','Female','Union'];
     if(wantPlug){  state.data.plug      = parsePlugs(wb);                                          updated.push('Plug'); jumpTo='plug'; }
-    if(wantConn){  state.data.connector = parseConnectors(wb); state.data.nuts = null; ensureNuts(); updated.push('Connector','Tube Nut'); }
-    if(wantElbow){ state.data.elbow     = parseElbows(wb);                                          updated.push('Elbow'); }
+    if(wantConn){
+      let parsed = parseConnectors(wb);
+      if(!anyTypeRows(parsed, CTYPES)) parsed = parseTypedProduct(wb, CTYPES);   // exported file → header/Type format
+      state.data.connector = parsed; state.data.nuts = null; ensureNuts(); updated.push('Connector','Tube Nut');
+    }
+    if(wantElbow){
+      let parsed = parseElbows(wb);
+      if(!anyTypeRows(parsed, CTYPES)) parsed = parseTypedProduct(wb, CTYPES);
+      state.data.elbow = parsed; updated.push('Elbow');
+    }
     if(!updated.length){
       // None of the built-ins → a new product line named after the file. Columns
       // are matched by header NAME so a reordered/extra-column file still works;
