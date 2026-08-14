@@ -1875,7 +1875,11 @@ async function handleUpload(file){
     if(wantConn){
       let parsed = parseConnectors(wb);
       if(!anyTypeRows(parsed, CTYPES)) parsed = parseTypedProduct(wb, CTYPES);   // exported file → header/Type format
-      state.data.connector = parsed; state.data.nuts = null; ensureNuts(); updated.push('Connector','Tube Nut');
+      state.data.connector = parsed; state.data.nuts = null; ensureNuts();
+      updated.push('Connector');
+      // Tube Nut is built from the "Nut Rates" sheet in CONN.xlsx; an exported
+      // file has no nut data, so only claim it when nuts actually loaded.
+      if((state.data.nuts||[]).length) updated.push('Tube Nut');
     }
     if(wantElbow){
       let parsed = parseElbows(wb);
