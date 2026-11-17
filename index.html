@@ -2027,6 +2027,28 @@ function armIdle(){
     const s = readSession();
     if(!s || Date.now() > s.exp) signOut('Signed out after 5 minutes of inactivity.');
   }, 15000);
+  clearInterval(accessTimer);
+  accessTimer = setInterval(checkAccess, ACCESS_CHECK_MS);
+}
+// The CRM decides who may use the calculator. Ask it again every 5 minutes, so
+// un-ticking Calculator (or EditPrices), or deactivating the employee, takes
+// effect on an open page too. A network failure keeps the page: a CRM restart
+// must not throw everyone out.
+const ACCESS_CHECK_MS = 5 * 60 * 1000;
+let accessTimer = null;
+async function checkAccess(){
+  if(!crmToken() || !readSession()) return;
+  let r;
+  try{ r = await crmFetch(CRM_BASE + '/calc/me?check=1'); }catch(e){ return; }
+  if(r.status === 401 || r.status === 403){
+    signOut('Your calculator access was changed in the CRM. Please sign in again.'); return;
+  }
+  if(!r.ok) return;
+  try{
+    const j = await r.json(), s = readSession();
+    if(j && j.ok && s && (j.role !== s.role || !!j.is_admin !== !!s.isAdmin))
+      signOut('Your calculator access was changed in the CRM. Please sign in again.');
+  }catch(e){}
 }
 // Remove transient custom items that an older version accidentally saved to the price sheet.
 function stripCustom(d){
@@ -2081,7 +2103,7 @@ function enterApp(role, id, data, isAdmin){
   if(typeof fetchPos==='function') fetchPos();
 }
 function signOut(msg){
-  clearInterval(idleTimer); endSession();
+  clearInterval(idleTimer); clearInterval(accessTimer); endSession();
   localStorage.removeItem('calc_token');   // drop the calculator's own token (the CRM tab is untouched)
   try{ sessionStorage.setItem('calc_no_sso', '1'); }catch(e){}   // see ssoStart
   document.getElementById('gate').style.display='flex';
