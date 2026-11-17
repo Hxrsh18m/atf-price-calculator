@@ -327,6 +327,8 @@
     <h2>🔒 Arihant ATF</h2>
     <div class="muted" style="font-size:13px">Purchase Price Calculator</div>
     <div class="muted" style="font-size:12px;margin:2px 0 10px">Sign in with your CRM account</div>
+    <button class="btn primary" id="ssoBtn" type="button">Sign in with your CRM login</button>
+    <div class="muted" style="font-size:12px;margin:10px 0;text-align:center">or type your CRM User ID and password</div>
     <input id="uid" type="text" placeholder="CRM User ID" autocomplete="username" autocapitalize="none" spellcheck="false">
     <div style="position:relative;margin:0 0 12px">
       <input id="pw" type="password" placeholder="Password" autocomplete="current-password" style="margin:0;padding-right:46px">
@@ -1516,6 +1518,32 @@ async function login(uid, password){
   return { role: j.role, id: j.id, data: j.data, isAdmin: !!j.is_admin };
 }
 
+// Single sign-on (the CRM's routers/sso.py): the CRM signs the person in, or sees
+// they already are, and comes back with a one-time ticket in the URL fragment
+// (#sso=…), which is swapped here for the same answer /calc/unlock gives.
+// After a sign-out (manual or the 5-minute idle one) we do NOT bounce straight
+// back through the CRM — it would sign them in again unasked — so the gate
+// waits for a tap on "Sign in with your CRM login" instead.
+function ssoStart(){
+  try{ sessionStorage.removeItem('calc_no_sso'); }catch(e){}
+  location.href = CRM_BASE + '/sso/start?app=calc&next=%2F';
+}
+function ssoHeld(){
+  try{ return sessionStorage.getItem('calc_no_sso') === '1' || location.hash === '#local'; }catch(e){ return true; }
+}
+async function ssoRedeem(ticket){
+  const r = await fetch(CRM_BASE + '/sso/redeem', {
+    method:'POST',   // no credentials: the ticket is the proof, and we want our own token
+    headers:{ 'Content-Type':'application/x-www-form-urlencoded', 'Accept':'application/json' },
+    body: new URLSearchParams({ ticket, app:'calc' }),
+  });
+  let j = null;
+  try{ j = await r.json(); }catch(e){}
+  if(!r.ok || !j || !j.ok) throw new Error((j && j.error) || 'Could not sign in through the CRM.');
+  if(j.token) localStorage.setItem('calc_token', j.token);
+  return { role: j.role, id: j.id, data: j.data, isAdmin: !!j.is_admin };
+}
+
 // ---- client-side Excel parsing (mirrors server.py) ----
 function num(v){
   if(v===null||v===undefined||v==='') return null;
@@ -2055,6 +2083,7 @@ function enterApp(role, id, data, isAdmin){
 function signOut(msg){
   clearInterval(idleTimer); endSession();
   localStorage.removeItem('calc_token');   // drop the calculator's own token (the CRM tab is untouched)
+  try{ sessionStorage.setItem('calc_no_sso', '1'); }catch(e){}   // see ssoStart
   document.getElementById('gate').style.display='flex';
   document.getElementById('pw').value='';
   document.getElementById('gateErr').textContent = msg || '';
@@ -2075,6 +2104,7 @@ async function doLogin(){
   }
 }
 document.getElementById('unlock').onclick = doLogin;
+document.getElementById('ssoBtn').onclick = ssoStart;
 const PW_EYE = '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
 const PW_EYE_OFF = '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
 document.getElementById('pwToggle').onclick = ()=>{
@@ -2171,6 +2201,23 @@ window.applySharedState = function(d){
 // calculator's independent login, NOT the CRM's cookie, so it does not inherit
 // whoever the CRM tab is signed in as.
 (async function boot(){
+  // Back from the CRM with a single sign-on ticket.
+  const ticket = new URLSearchParams(location.hash.slice(1)).get('sso');
+  if(ticket){
+    history.replaceState(null, '', location.pathname + location.search);   // single use: never leave it in the URL
+    try{
+      const j = await ssoRedeem(ticket);
+      writeSession({ role:j.role, id:j.id, exp:Date.now()+IDLE_MS, data:j.data, isAdmin:j.isAdmin });
+      enterApp(j.role, j.id, j.data, j.isAdmin);
+      return;
+    }catch(e){
+      endSession();
+      try{ sessionStorage.setItem('calc_no_sso', '1'); }catch(_){}   // no redirect loop
+      document.getElementById('gateErr').textContent = e.message;
+      document.getElementById('uid').focus();
+      return;
+    }
+  }
   const s = readSession();
   if(s && Date.now() < s.exp && s.data){ enterApp(s.role, s.id, s.data, s.isAdmin); touchSession(); return; }
   endSession();
@@ -2188,6 +2235,7 @@ window.applySharedState = function(d){
     }catch(e){ /* CRM unreachable */ }
     localStorage.removeItem('calc_token');   // stale/invalid token — require a fresh sign-in
   }
+  if(!ssoHeld()){ ssoStart(); return; }   // single sign-on: let the CRM sign them in
   document.getElementById('uid').focus();
 })();
 

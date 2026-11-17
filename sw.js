@@ -4,7 +4,7 @@
    cache is only a fallback when offline. POSTs and cross-origin requests (the
    CRM API on crm2.arihantatf.com) are never touched, so login/vendor/PO calls
    always hit the live network and nothing sensitive is cached. */
-const CACHE = 'atf-calc-v2';
+const CACHE = 'atf-calc-v3';
 const CORE = [
   '/', '/index.html',
   '/xlsx.full.min.js', '/jspdf.umd.min.js', '/jspdf.autotable.min.js',
